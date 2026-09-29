@@ -59,8 +59,18 @@ npm run tauri ios init
 npm run tauri ios dev
 ```
 
+## GitHub Actions
+
+仓库只打 Android 与 iOS。推送到 `main`、开 PR，或在 Actions 里手动 Run workflow。
+
+- Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
+- iOS：`macos-latest`，debug IPA，产物名 `ios-ipa`
+
+iOS 签名需要 Apple 开发者证书。未配置证书时，iOS 任务可能失败；Android 不受影响。
+
 ## 测试
 
 ```bash
 npm test
 ```
+
