@@ -1,0 +1,117 @@
+/** @vitest-environment jsdom */
+import 'fake-indexeddb/auto';
+import {cleanup, render, screen, within} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import {afterEach, beforeEach, describe, expect, it} from 'vitest';
+import * as XLSX from 'xlsx';
+import App from './App';
+import {resetOpenWith} from './lib/open-with';
+import {resetForTests} from './lib/store';
+
+afterEach(() => {
+  cleanup();
+});
+
+beforeEach(async () => {
+  window.location.hash = '';
+  resetOpenWith();
+  await resetForTests();
+});
+
+function sampleFile(): File {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['姓名', '学号'],
+      ['张三', '001'],
+      ['李四', '002'],
+    ]),
+    '一班',
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.aoa_to_sheet([
+      ['名字'],
+      ['王五'],
+    ]),
+    '二班',
+  );
+  const bytes = XLSX.write(wb, {type: 'array', bookType: 'xlsx'}) as Uint8Array;
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return new File([copy], '班级.xlsx', {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+}
+
+describe('local roll-call flow', () => {
+  it('imports xlsx with sheet and row selection, then saves a template', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    await user.click(screen.getByRole('button', {name: '模板'}));
+    await user.click(screen.getByRole('button', {name: '导入 Excel'}));
+    await screen.findByRole('heading', {name: '导入为模板'});
+
+    const input = document.querySelector('input[type="file"]');
+    expect(input).toBeTruthy();
+    await user.upload(input as HTMLInputElement, sampleFile());
+
+    expect(await screen.findByDisplayValue('班级')).toBeTruthy();
+    expect(screen.getAllByText(/一班|Sheet1/).length).toBeGreaterThan(0);
+    expect(screen.getAllByDisplayValue('1').length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole('button', {name: '进入编辑'}));
+    expect(await screen.findByRole('heading', {name: '编辑模板'})).toBeTruthy();
+
+    await user.click(screen.getByRole('button', {name: '保存'}));
+    expect(await screen.findByText('模板已保存')).toBeTruthy();
+  });
+
+  it('creates a session from a template, searches by initials, closes into history', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    await user.click(screen.getByRole('button', {name: '模板'}));
+    await user.click(screen.getByRole('button', {name: '空白模板'}));
+    await screen.findByRole('heading', {name: '编辑模板'});
+
+    const nameField = screen.getByLabelText('模板名称');
+    await user.clear(nameField);
+    await user.type(nameField, '高一1班');
+
+    const add = screen.getByPlaceholderText('添加姓名');
+    await user.type(add, '张三{Enter}');
+    await user.type(add, '李四{Enter}');
+    expect(await screen.findByDisplayValue('张三')).toBeTruthy();
+    expect(screen.getByDisplayValue('李四')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', {name: '保存'}));
+    await screen.findByText('模板已保存');
+    await user.click(screen.getByRole('button', {name: '返回'}));
+
+    await user.click(await screen.findByRole('button', {name: '从模板新建'}));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByText('高一1班'));
+    await user.click(screen.getByRole('button', {name: '开始点名'}));
+
+    expect(await screen.findByPlaceholderText('姓名、拼音、首字母或学号')).toBeTruthy();
+    const zhang = screen.getByText('张三');
+    const row = zhang.closest('li');
+    expect(row).toBeTruthy();
+    await user.click(within(row as HTMLElement).getByRole('button', {name: '到'}));
+    expect(within(row as HTMLElement).getAllByText('到').length).toBeGreaterThan(0);
+
+    await user.type(screen.getByPlaceholderText('姓名、拼音、首字母或学号'), 'zs');
+    expect(screen.getByText('张三')).toBeTruthy();
+    expect(screen.queryByText('李四')).toBeNull();
+
+    await user.click(screen.getByRole('button', {name: '关闭'}));
+    const closeDialog = await screen.findByRole('dialog');
+    await user.click(within(closeDialog).getByRole('button', {name: '关闭'}));
+    expect(await screen.findByRole('heading', {name: '指针点名'})).toBeTruthy();
+    expect(screen.getByText('历史')).toBeTruthy();
+    expect(screen.getByText(/高一1班/)).toBeTruthy();
+  });
+});

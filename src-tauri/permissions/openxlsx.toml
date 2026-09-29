@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-take-pending-xlsx"
+description = "Allow reading a spreadsheet opened from another app"
+commands.allow = ["take_pending_xlsx"]
