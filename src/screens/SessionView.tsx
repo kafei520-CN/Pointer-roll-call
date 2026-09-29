@@ -3,6 +3,7 @@ import {IconSearch} from '../icons';
 import {closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {matchesQuery} from '../lib/search';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
+import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
 import type {SessionPerson, Status} from '../types';
 import {STATUSES} from '../types';
@@ -15,6 +16,16 @@ export function SessionView({id}: {id: string}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [closeOpen, setCloseOpen] = useState(false);
+  const swipeSheets = useHorizontalSwipe((direction) => {
+    if (!session) {
+      return;
+    }
+    const index = session.sheets.findIndex((item) => item.id === sheetId);
+    const next = session.sheets[index + direction];
+    if (next) {
+      setSheetId(next.id);
+    }
+  });
 
   useEffect(() => {
     if (!session) {
@@ -113,7 +124,7 @@ export function SessionView({id}: {id: string}) {
           })}
         </div>
       </div>
-      <main className="flex-1 overflow-y-auto px-4 py-3 pb-2">
+      <main className="flex-1 overflow-y-auto px-4 py-3 pb-2" data-testid="menu-swipe" {...swipeSheets}>
         {visible.length === 0 ? (
           <p className="py-16 text-center text-sm text-mute">没有匹配的人</p>
         ) : (

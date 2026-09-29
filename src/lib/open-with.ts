@@ -61,25 +61,56 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
   if (!isTauri()) {
     return () => undefined;
   }
-  const apply = (file: File | null) => {
-    if (file) {
-      onFile(file);
-    }
+  let closed = false;
+  let chain = Promise.resolve();
+  const pull = () => {
+    chain = chain
+      .then(async () => {
+        if (closed) {
+          return;
+        }
+        const file = await takePending();
+        if (file && !closed) {
+          onFile(file);
+        }
+      })
+      .catch(() => undefined);
   };
-  try {
-    apply(await takePending());
-  } catch {
-    // Running on web or the command is unavailable.
-  }
+  pull();
+  const timers = [400, 1200].map((delay) => window.setTimeout(pull, delay));
+  let unregisterPlugin = () => undefined as void;
+  let unlisten = () => undefined as void;
   try {
     const {addPluginListener} = await import('@tauri-apps/api/core');
     const listener = await addPluginListener('openxlsx', 'xlsxOpened', () => {
-      void takePending().then(apply);
+      pull();
     });
-    return () => {
+    unregisterPlugin = () => {
       void listener.unregister();
     };
   } catch {
-    return () => undefined;
+    // Running on web or the plugin listener is unavailable.
   }
+  if (!closed) {
+    pull();
+  }
+  try {
+    const {listen} = await import('@tauri-apps/api/event');
+    const stop = await listen('xlsx-opened', () => {
+      pull();
+    });
+    unlisten = () => {
+      stop();
+    };
+  } catch {
+    // The event API is unavailable outside the native shell.
+  }
+  return () => {
+    closed = true;
+    for (const timer of timers) {
+      window.clearTimeout(timer);
+    }
+    unregisterPlugin();
+    unlisten();
+  };
 }

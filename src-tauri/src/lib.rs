@@ -5,6 +5,17 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(openxlsx::init())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = event {
+                let paths = urls.into_iter().filter_map(|url| url.to_file_path().ok());
+                if !openxlsx::ingest_files(app, paths) {
+                    openxlsx::ingest_inbox(app);
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            let _ = (app, event);
+        });
 }

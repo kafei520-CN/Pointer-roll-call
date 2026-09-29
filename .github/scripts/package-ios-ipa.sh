@@ -161,6 +161,26 @@ if [[ "$exe" != "$ascii_name" ]]; then
 fi
 echo "packed bundle $(basename "$app") executable $ascii_name label $display_name"
 
+# Tauri merges Info.ios.plist during ios build, but this packager xcodebuilds
+# the generated project itself. Copy the document types onto the finished app
+# so Files and 微信 can hand an xlsx to 指针点名.
+python3 - "$app/Info.plist" "src-tauri/Info.ios.plist" <<'PY'
+import plistlib, sys
+dest_path, src_path = sys.argv[1], sys.argv[2]
+with open(dest_path, "rb") as fh:
+    dest = plistlib.load(fh)
+with open(src_path, "rb") as fh:
+    extra = plistlib.load(fh)
+dest.update(extra)
+with open(dest_path, "wb") as fh:
+    plistlib.dump(dest, fh, sort_keys=False)
+print("merged", src_path, "into", dest_path)
+PY
+if ! /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes' "$app/Info.plist" >/dev/null; then
+  echo "built app is missing Excel document types"
+  exit 1
+fi
+
 mkdir -p "$apple_dir/build"
 work="$(mktemp -d)"
 mkdir -p "$work/Payload"

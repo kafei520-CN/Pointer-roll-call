@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type {Column, Person, RawSheet, RawWorkbook, SheetImportConfig} from '../types';
+import type {Column, Person, RawSheet, RawWorkbook, SheetImportConfig, TemplateSheet} from '../types';
 import {createId} from './id';
 import {buildSearchKeys} from './search';
 
@@ -103,6 +103,32 @@ export function defaultConfigs(workbook: RawWorkbook): SheetImportConfig[] {
     included: index === 0 || workbook.sheets.length <= 6,
     ...detectConfig(sheet.rows),
   }));
+}
+
+export function buildTemplateSheets(
+  book: RawWorkbook,
+  configs: SheetImportConfig[],
+): TemplateSheet[] {
+  const sheets: TemplateSheet[] = [];
+  configs.forEach((item, index) => {
+    if (!item.included) {
+      return;
+    }
+    const sheet = book.sheets[index];
+    if (!sheet) {
+      return;
+    }
+    const extracted = extractPeople(sheet.rows, item);
+    sheets.push({
+      id: createId(),
+      name: item.name,
+      headerRow: item.headerRow,
+      nameColumnLabel: extracted.nameColumnLabel,
+      columns: extracted.columns,
+      people: extracted.people,
+    });
+  });
+  return sheets;
 }
 
 export function extractPeople(

@@ -1,7 +1,8 @@
 import {useEffect, useState} from 'react';
-import {pushOpenedXlsx, setupOpenWith} from './lib/open-with';
+import {openOpenedWorkbook} from './lib/opened-template';
+import {setupOpenWith} from './lib/open-with';
 import {hydrate, useApp} from './lib/store';
-import {go, parseHash, type Route} from './router';
+import {parseHash, type Route} from './router';
 import {Home} from './screens/Home';
 import {ImportWizard} from './screens/ImportWizard';
 import {SessionView} from './screens/SessionView';
@@ -12,17 +13,26 @@ export default function App() {
   const [route, setRoute] = useState<Route>(parseHash);
 
   useEffect(() => {
-    void hydrate();
     const onHash = () => setRoute(parseHash());
     window.addEventListener('hashchange', onHash);
     let stopOpenWith = () => undefined as void;
-    void setupOpenWith((file) => {
-      pushOpenedXlsx(file);
-      go('/import');
-    }).then((stop) => {
+    let cancelled = false;
+    void (async () => {
+      await hydrate();
+      if (cancelled) {
+        return;
+      }
+      const stop = await setupOpenWith((file) => {
+        void openOpenedWorkbook(file);
+      });
+      if (cancelled) {
+        stop();
+        return;
+      }
       stopOpenWith = stop;
-    });
+    })();
     return () => {
+      cancelled = true;
       window.removeEventListener('hashchange', onHash);
       stopOpenWith();
     };

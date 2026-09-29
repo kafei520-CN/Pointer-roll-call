@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 import 'fake-indexeddb/auto';
-import {cleanup, render, screen, within} from '@testing-library/react';
+import {cleanup, fireEvent, render, screen, within} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import * as XLSX from 'xlsx';
 import App from './App';
+import {openOpenedWorkbook} from './lib/opened-template';
 import {buildSearchKeys} from './lib/search';
 import {resetOpenWith} from './lib/open-with';
 import {createTemplateFromSheets, resetForTests} from './lib/store';
@@ -39,9 +40,10 @@ function sampleFile(): File {
     ]),
     '二班',
   );
-  const bytes = XLSX.write(wb, {type: 'array', bookType: 'xlsx'}) as Uint8Array;
-  const copy = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(copy).set(bytes);
+  const written = XLSX.write(wb, {type: 'array', bookType: 'xlsx'}) as ArrayBuffer | Uint8Array;
+  const view = written instanceof Uint8Array ? written : new Uint8Array(written);
+  const copy = new ArrayBuffer(view.byteLength);
+  new Uint8Array(copy).set(view);
   return new File([copy], '班级.xlsx', {
     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   });
@@ -139,4 +141,52 @@ describe('local roll-call flow', () => {
     expect(within(first.closest('li') as HTMLElement).getByText('1')).toBeTruthy();
     expect(within(screen.getByDisplayValue('李四').closest('li') as HTMLElement).getByText('2')).toBeTruthy();
   });
+
+  it('swipes between the home menus', async () => {
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    const surface = screen.getByTestId('menu-swipe');
+    expect(screen.getByRole('button', {name: '从模板新建'})).toBeTruthy();
+
+    swipe(surface, 280, 40);
+    expect(screen.getByRole('button', {name: '导入 Excel'})).toBeTruthy();
+    swipe(surface, 40, 280);
+    expect(screen.getByRole('button', {name: '从模板新建'})).toBeTruthy();
+
+    fireEvent.pointerDown(surface, {pointerType: 'touch', clientX: 180, clientY: 80});
+    fireEvent.pointerUp(surface, {pointerType: 'touch', clientX: 190, clientY: 240});
+    fireEvent.pointerDown(surface, {pointerType: 'mouse', clientX: 280, clientY: 180});
+    fireEvent.pointerUp(surface, {pointerType: 'mouse', clientX: 20, clientY: 180});
+    expect(screen.getByRole('button', {name: '从模板新建'})).toBeTruthy();
+  });
+
+  it('creates a template when another app opens an xlsx', async () => {
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    await openOpenedWorkbook(sampleFile());
+
+    expect(await screen.findByRole('heading', {name: '编辑模板'})).toBeTruthy();
+    expect(screen.getByDisplayValue('班级')).toBeTruthy();
+    expect(screen.getByDisplayValue('张三')).toBeTruthy();
+    expect(screen.queryByDisplayValue('王五')).toBeNull();
+
+    swipe(screen.getByTestId('menu-swipe'), 280, 40);
+    expect(screen.getByDisplayValue('王五')).toBeTruthy();
+    expect(screen.queryByDisplayValue('张三')).toBeNull();
+    swipe(screen.getByTestId('menu-swipe'), 40, 280);
+    expect(screen.getByDisplayValue('张三')).toBeTruthy();
+  });
+
+  it('keeps an unreadable opened file on the import screen', async () => {
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    await openOpenedWorkbook(new File([Uint8Array.from([1, 2, 3])], '坏.xlsx'));
+    expect(await screen.findByRole('heading', {name: '导入为模板'})).toBeTruthy();
+    expect(screen.queryByRole('heading', {name: '编辑模板'})).toBeNull();
+  });
 });
+
+function swipe(element: HTMLElement, fromX: number, toX: number) {
+  fireEvent.pointerDown(element, {pointerType: 'touch', clientX: fromX, clientY: 180});
+  fireEvent.pointerUp(element, {pointerType: 'touch', clientX: toX, clientY: 188});
+}

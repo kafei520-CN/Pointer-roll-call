@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>LSSupportsOpeningDocumentsInPlace</key>
+  <false/>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Excel 工作簿</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Alternate</string>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>xlsx</string>
+        <string>xls</string>
+        <string>xlsm</string>
+      </array>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>org.openxmlformats.spreadsheetml.sheet</string>
+        <string>com.microsoft.excel.xls</string>
+        <string>org.openxmlformats.spreadsheetml.sheet.macroenabled.12</string>
+      </array>
+    </dict>
+  </array>
+  <key>UTImportedTypeDeclarations</key>
+  <array>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>org.openxmlformats.spreadsheetml.sheet</string>
+      <key>UTTypeDescription</key>
+      <string>Excel Workbook</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+        <string>public.content</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>xlsx</string>
+        </array>
+        <key>public.mime-type</key>
+        <string>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>com.microsoft.excel.xls</string>
+      <key>UTTypeDescription</key>
+      <string>Excel 97-2003 Workbook</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>xls</string>
+        </array>
+        <key>public.mime-type</key>
+        <string>application/vnd.ms-excel</string>
+      </dict>
+    </dict>
+    <dict>
+      <key>UTTypeIdentifier</key>
+      <string>org.openxmlformats.spreadsheetml.sheet.macroenabled.12</string>
+      <key>UTTypeDescription</key>
+      <string>Excel Macro-Enabled Workbook</string>
+      <key>UTTypeConformsTo</key>
+      <array>
+        <string>public.data</string>
+      </array>
+      <key>UTTypeTagSpecification</key>
+      <dict>
+        <key>public.filename-extension</key>
+        <array>
+          <string>xlsm</string>
+        </array>
+        <key>public.mime-type</key>
+        <string>application/vnd.ms-excel.sheet.macroEnabled.12</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

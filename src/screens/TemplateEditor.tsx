@@ -3,6 +3,7 @@ import {IconPlus, IconTrash} from '../icons';
 import {createId} from '../lib/id';
 import {emptySheet, upsertTemplate, useApp} from '../lib/store';
 import {buildSearchKeys} from '../lib/search';
+import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
 import type {Person, Template, TemplateSheet} from '../types';
 import {Button, Modal, Shell, SheetTabs, TextField, TopBar} from '../ui';
@@ -17,6 +18,13 @@ export function TemplateEditor({id}: {id: string}) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [savedFlash, setSavedFlash] = useState('');
+  const swipeSheets = useHorizontalSwipe((direction) => {
+    const index = sheets.findIndex((item) => item.id === sheetId);
+    const next = sheets[index + direction];
+    if (next) {
+      setSheetId(next.id);
+    }
+  });
 
   useEffect(() => {
     if (!stored) {
@@ -110,7 +118,7 @@ export function TemplateEditor({id}: {id: string}) {
         }} />
         {savedFlash ? <p className="text-xs text-mute">{savedFlash}</p> : null}
       </div>
-      <main className="flex-1 overflow-y-auto px-4 py-3">
+      <main className="flex-1 overflow-y-auto px-4 py-3" data-testid="menu-swipe" {...swipeSheets}>
         <div className="mb-3 flex items-center justify-between">
           <button
             type="button"

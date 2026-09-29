@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Manager, Runtime};
+use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Emitter, Manager, Runtime};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,19 +12,19 @@ pub struct PendingXlsx {
 fn is_spreadsheet(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| {
-            matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "xlsx" | "xls" | "xlsm"
-            )
-        })
+        .map(|ext| matches!(ext.to_ascii_lowercase().as_str(), "xlsx" | "xls" | "xlsm"))
         .unwrap_or(false)
 }
 
-fn write_pending(dir: &Path, file_name: &str, data: &[u8]) {
-    let _ = std::fs::create_dir_all(dir);
-    let _ = std::fs::write(dir.join("pending_xlsx.bin"), data);
+fn write_pending(dir: &Path, file_name: &str, data: &[u8]) -> bool {
+    if std::fs::create_dir_all(dir).is_err() {
+        return false;
+    }
+    if std::fs::write(dir.join("pending_xlsx.bin"), data).is_err() {
+        return false;
+    }
     let _ = std::fs::write(dir.join("pending_xlsx.name"), file_name);
+    true
 }
 
 fn seed_from_cli<R: Runtime>(app: &AppHandle<R>) {
@@ -46,9 +46,97 @@ fn seed_from_cli<R: Runtime>(app: &AppHandle<R>) {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("import.xlsx");
-        write_pending(&dir, name, &data);
+        let _ = write_pending(&dir, name, &data);
         break;
     }
+}
+
+/// Read spreadsheets the OS handed the app and keep one copy for the webview.
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
+pub fn ingest_files<R: Runtime>(
+    app: &AppHandle<R>,
+    paths: impl IntoIterator<Item = PathBuf>,
+) -> bool {
+    let Ok(dir) = app.path().app_cache_dir() else {
+        return false;
+    };
+    for path in paths {
+        if !path.is_file() || !is_spreadsheet(&path) {
+            continue;
+        }
+        let Ok(data) = std::fs::read(&path) else {
+            continue;
+        };
+        if data.is_empty() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("import.xlsx");
+        if !write_pending(&dir, name, &data) {
+            continue;
+        }
+        #[cfg(target_os = "ios")]
+        remove_inbox_file(&path);
+        let _ = app.emit("xlsx-opened", ());
+        return true;
+    }
+    false
+}
+
+pub fn ingest_inbox<R: Runtime>(app: &AppHandle<R>) {
+    #[cfg(target_os = "ios")]
+    ingest_ios_inbox(app);
+    #[cfg(not(target_os = "ios"))]
+    let _ = app;
+}
+
+#[cfg(target_os = "ios")]
+fn ingest_ios_inbox<R: Runtime>(app: &AppHandle<R>) {
+    let Some(dir) = ios_inbox_dir() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return;
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .collect();
+    paths.sort_by(|left, right| modified(right).cmp(&modified(left)));
+    let _ = ingest_files(app, paths);
+}
+
+#[cfg(target_os = "ios")]
+fn ios_inbox_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let dir = PathBuf::from(home).join("Documents").join("Inbox");
+    dir.is_dir().then_some(dir)
+}
+
+#[cfg(target_os = "ios")]
+fn modified(path: &Path) -> std::time::SystemTime {
+    std::fs::metadata(path)
+        .and_then(|meta| meta.modified())
+        .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+}
+
+#[cfg(target_os = "ios")]
+fn remove_inbox_file(path: &Path) {
+    let Some(inbox) = path.parent() else {
+        return;
+    };
+    if inbox.file_name().and_then(|name| name.to_str()) != Some("Inbox") {
+        return;
+    }
+    let Some(documents) = inbox.parent() else {
+        return;
+    };
+    if documents.file_name().and_then(|name| name.to_str()) != Some("Documents") {
+        return;
+    }
+    let _ = std::fs::remove_file(path);
 }
 
 #[tauri::command]
@@ -77,6 +165,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             #[cfg(not(target_os = "android"))]
             let _ = api;
             seed_from_cli(app);
+            ingest_inbox(app);
             Ok(())
         })
         .build()

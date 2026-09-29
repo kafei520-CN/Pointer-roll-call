@@ -9,6 +9,7 @@ import {
   deleteTemplate,
   useApp,
 } from '../lib/store';
+import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
 import type {Session, Template} from '../types';
 import {Button, CardButton, Empty, Modal, Segmented, Shell, TextField, TopBar, cx} from '../ui';
@@ -25,6 +26,12 @@ export function Home() {
     {kind: 'template' | 'session'; id: string; name: string} | null
   >(null);
   const [notice, setNotice] = useState('');
+  const swipeMenus = useHorizontalSwipe((direction) => {
+    setTab((current) => {
+      const order: HomeTab[] = ['sessions', 'templates'];
+      return order[order.indexOf(current) + direction] ?? current;
+    });
+  });
 
   const readyTemplates = useMemo(
     () => app.templates.filter((item) => !item.draft),
@@ -67,36 +74,38 @@ export function Home() {
   return (
     <Shell>
       <TopBar title="指针点名" subtitle="本地点名，不上云" />
-      <div className="px-4 pt-4">
-        <Segmented
-          value={tab}
-          onChange={setTab}
-          options={[
-            {value: 'sessions', label: '点名'},
-            {value: 'templates', label: '模板'},
-          ]}
-        />
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="menu-swipe" {...swipeMenus}>
+        <div className="px-4 pt-4">
+          <Segmented
+            value={tab}
+            onChange={setTab}
+            options={[
+              {value: 'sessions', label: '点名'},
+              {value: 'templates', label: '模板'},
+            ]}
+          />
+        </div>
+        <main className="flex-1 overflow-y-auto px-4 py-4 pb-28">
+          {tab === 'sessions' ? (
+            <SessionsPane
+              openSessions={openSessions}
+              history={history}
+              onDelete={(session) =>
+                setPendingDelete({kind: 'session', id: session.id, name: session.name})
+              }
+            />
+          ) : (
+            <TemplatesPane
+              ready={readyTemplates}
+              drafts={drafts}
+              onNew={(template) => startFromTemplate(template)}
+              onDelete={(template) =>
+                setPendingDelete({kind: 'template', id: template.id, name: template.name})
+              }
+            />
+          )}
+        </main>
       </div>
-      <main className="flex-1 overflow-y-auto px-4 py-4 pb-28">
-        {tab === 'sessions' ? (
-          <SessionsPane
-            openSessions={openSessions}
-            history={history}
-            onDelete={(session) =>
-              setPendingDelete({kind: 'session', id: session.id, name: session.name})
-            }
-          />
-        ) : (
-          <TemplatesPane
-            ready={readyTemplates}
-            drafts={drafts}
-            onNew={(template) => startFromTemplate(template)}
-            onDelete={(template) =>
-              setPendingDelete({kind: 'template', id: template.id, name: template.name})
-            }
-          />
-        )}
-      </main>
       <div className="sticky bottom-0 border-t border-line bg-paper/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         {tab === 'sessions' ? (
           <Button className="w-full" onClick={() => setPickTemplate(true)}>

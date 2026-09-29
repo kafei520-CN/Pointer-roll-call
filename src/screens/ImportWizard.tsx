@@ -1,13 +1,12 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {IconFile} from '../icons';
 import {fileStem} from '../lib/format';
-import {createId} from '../lib/id';
 import {consumeOpenedXlsx, subscribeOpenedXlsx} from '../lib/open-with';
 import {createTemplateFromSheets} from '../lib/store';
 import {
+  buildTemplateSheets,
   columnLetter,
   defaultConfigs,
-  extractPeople,
   parseWorkbook,
 } from '../lib/xlsx';
 import {go} from '../router';
@@ -80,24 +79,11 @@ export function ImportWizard() {
     if (!book) {
       return;
     }
-    const included = configs
-      .map((item, index) => ({item, sheet: book.sheets[index]}))
-      .filter(({item}) => item.included);
-    if (included.length === 0) {
+    const sheets = buildTemplateSheets(book, configs);
+    if (sheets.length === 0) {
       setError('请至少选择一个工作表');
       return;
     }
-    const sheets = included.map(({item, sheet}) => {
-      const extracted = extractPeople(sheet.rows, item);
-      return {
-        id: createId(),
-        name: item.name,
-        headerRow: item.headerRow,
-        nameColumnLabel: extracted.nameColumnLabel,
-        columns: extracted.columns,
-        people: extracted.people,
-      };
-    });
     const template = await createTemplateFromSheets(
       templateName.trim() || fileStem(book.fileName),
       book.fileName,
