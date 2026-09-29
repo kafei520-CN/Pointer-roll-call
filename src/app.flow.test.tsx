@@ -5,8 +5,10 @@ import userEvent from '@testing-library/user-event';
 import {afterEach, beforeEach, describe, expect, it} from 'vitest';
 import * as XLSX from 'xlsx';
 import App from './App';
+import {buildSearchKeys} from './lib/search';
 import {resetOpenWith} from './lib/open-with';
-import {resetForTests} from './lib/store';
+import {createTemplateFromSheets, resetForTests} from './lib/store';
+import {TemplateEditor} from './screens/TemplateEditor';
 
 afterEach(() => {
   cleanup();
@@ -86,6 +88,8 @@ describe('local roll-call flow', () => {
     await user.type(add, '李四{Enter}');
     expect(await screen.findByDisplayValue('张三')).toBeTruthy();
     expect(screen.getByDisplayValue('李四')).toBeTruthy();
+    expect(within(screen.getByDisplayValue('张三').closest('li') as HTMLElement).getByText('1')).toBeTruthy();
+    expect(within(screen.getByDisplayValue('李四').closest('li') as HTMLElement).getByText('2')).toBeTruthy();
 
     await user.click(screen.getByRole('button', {name: '保存'}));
     await screen.findByText('模板已保存');
@@ -100,6 +104,7 @@ describe('local roll-call flow', () => {
     const zhang = screen.getByText('张三');
     const row = zhang.closest('li');
     expect(row).toBeTruthy();
+    expect(within(row as HTMLElement).getByText('1')).toBeTruthy();
     await user.click(within(row as HTMLElement).getByRole('button', {name: '到'}));
     expect(within(row as HTMLElement).getAllByText('到').length).toBeGreaterThan(0);
 
@@ -113,5 +118,25 @@ describe('local roll-call flow', () => {
     expect(await screen.findByRole('heading', {name: '指针点名'})).toBeTruthy();
     expect(screen.getByText('历史')).toBeTruthy();
     expect(screen.getByText(/高一1班/)).toBeTruthy();
+  });
+
+  it('shows the first imported person as 1 when the sheet header occupied row 1', async () => {
+    const template = await createTemplateFromSheets('学号查询', '学号查询.xlsx', [
+      {
+        id: 'sheet-1',
+        name: 'Sheet1',
+        headerRow: 1,
+        nameColumnLabel: '姓名',
+        columns: [{key: 'c0', label: '序号'}],
+        people: [
+          {id: 'p1', rowNumber: 2, name: '张三', fields: {c0: '1'}, search: buildSearchKeys('张三', {c0: '1'})},
+          {id: 'p2', rowNumber: 3, name: '李四', fields: {c0: '2'}, search: buildSearchKeys('李四', {c0: '2'})},
+        ],
+      },
+    ]);
+    render(<TemplateEditor id={template.id} />);
+    const first = await screen.findByDisplayValue('张三');
+    expect(within(first.closest('li') as HTMLElement).getByText('1')).toBeTruthy();
+    expect(within(screen.getByDisplayValue('李四').closest('li') as HTMLElement).getByText('2')).toBeTruthy();
   });
 });

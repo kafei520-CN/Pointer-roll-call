@@ -138,9 +138,9 @@ export function TemplateEditor({id}: {id: string}) {
           ) : null}
         </div>
         <ul className="space-y-2">
-          {sheet.people.map((person) => (
+          {sheet.people.map((person, index) => (
             <li key={person.id} className="flex items-center gap-2 rounded-2xl border border-line bg-white px-3 py-2">
-              <span className="w-8 shrink-0 text-xs text-mute">{person.rowNumber}</span>
+              <span className="w-8 shrink-0 text-xs text-mute">{index + 1}</span>
               <input
                 value={person.name}
                 onChange={(event) => {

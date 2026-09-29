@@ -122,6 +122,7 @@ export function SessionView({id}: {id: string}) {
               <PersonCard
                 key={person.id}
                 person={person}
+                order={sheet.people.findIndex((item) => item.id === person.id) + 1}
                 columns={sheet.columns}
                 onStatus={(status) =>
                   void markPerson(session.id, sheet.id, person.id, status)
@@ -151,10 +152,12 @@ export function SessionView({id}: {id: string}) {
 
 function PersonCard({
   person,
+  order,
   columns,
   onStatus,
 }: {
   person: SessionPerson;
+  order: number;
   columns: Array<{key: string; label: string}>;
   onStatus: (status: Status) => void;
 }) {
@@ -165,7 +168,7 @@ function PersonCard({
   return (
     <li className="rounded-3xl border border-line bg-white p-3">
       <div className="flex items-start gap-3">
-        <span className="w-8 pt-1 text-xs text-mute">{person.rowNumber}</span>
+        <span className="w-8 pt-1 text-xs text-mute">{order}</span>
         <button
           type="button"
           className="min-w-0 flex-1 text-left"
