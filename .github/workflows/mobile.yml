@@ -111,8 +111,8 @@ jobs:
           CODE_SIGNING_ALLOWED: "NO"
           CODE_SIGNING_REQUIRED: "NO"
         run: |
-          chmod +x .github/scripts/package-ios-ipa.sh
-          .github/scripts/package-ios-ipa.sh
+          python3 -c "from pathlib import Path; p=Path('.github/scripts/package-ios-ipa.sh'); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\r', b'\n'))"
+          bash .github/scripts/package-ios-ipa.sh
 
       - uses: actions/upload-artifact@v4
         with:

@@ -1,104 +1,102 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "PATH=$PATH"
+command -v cargo
+command -v rustc
+command -v node
+command -v npm
+xcodebuild -version
+
 apple_dir="src-tauri/gen/apple"
-if [[ ! -d "$apple_dir" ]]; then
-  echo "Missing $apple_dir"
-  exit 1
-fi
+echo "Listing $apple_dir"
+ls -la "$apple_dir"
 
-echo "Apple project tree:"
-find "$apple_dir" -maxdepth 3 -print
-
-proj="$(find "$apple_dir" -maxdepth 2 \( -name '*.xcworkspace' -o -name '*.xcodeproj' \) | head -n 1)"
-if [[ -z "$proj" ]]; then
-  echo "No Xcode project under $apple_dir"
-  exit 1
-fi
-echo "Using $proj"
-
-if [[ "$proj" == *.xcworkspace ]]; then
-  list_flag="-workspace"
-  build_flag="-workspace"
+shopt -s nullglob
+workspaces=("$apple_dir"/*.xcworkspace)
+projects=("$apple_dir"/*.xcodeproj)
+if ((${#workspaces[@]} > 0)); then
+  proj="${workspaces[0]}"
+  selector=(-workspace "$proj")
+elif ((${#projects[@]} > 0)); then
+  proj="${projects[0]}"
+  selector=(-project "$proj")
 else
-  list_flag="-project"
-  build_flag="-project"
+  echo "No Xcode project under $apple_dir"
+  find "$apple_dir" -maxdepth 4 -print
+  exit 1
 fi
+echo "Using ${selector[*]}"
 
+xcodebuild -list "${selector[@]}"
 export XCODE_JSON
-XCODE_JSON="$(xcodebuild -list $list_flag "$proj" -json)"
-echo "$XCODE_JSON"
-
-scheme="$(
-  python3 -c '
+XCODE_JSON="$(xcodebuild -list "${selector[@]}" -json)"
+scheme="$(python3 - <<'PY'
 import json, os, sys
 data = json.loads(os.environ["XCODE_JSON"])
 root = data.get("project") or data.get("workspace") or {}
 schemes = root.get("schemes") or []
+targets = root.get("targets") or []
 for name in schemes:
     if "iOS" in name or "ios" in name:
         print(name)
-        sys.exit(0)
+        raise SystemExit
 if schemes:
     print(schemes[0])
-'
+    raise SystemExit
+if targets:
+    print(targets[0])
+    raise SystemExit
+raise SystemExit("no scheme or target")
+PY
 )"
-if [[ -z "$scheme" ]]; then
-  echo "No Xcode scheme found"
-  exit 1
-fi
-echo "Using scheme $scheme"
+echo "Using scheme [$scheme]"
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+root = Path("src-tauri/gen/apple")
+for pbx in root.rglob("project.pbxproj"):
+    text = pbx.read_text(encoding="utf-8")
+    text = text.replace("CODE_SIGN_STYLE = Automatic;", "CODE_SIGN_STYLE = Manual;")
+    text = re.sub(r"DEVELOPMENT_TEAM = [^;]*;", 'DEVELOPMENT_TEAM = "";', text)
+    text = re.sub(r'CODE_SIGN_IDENTITY = "[^"]*";', 'CODE_SIGN_IDENTITY = "-";', text)
+    pbx.write_text(text, encoding="utf-8")
+    print("patched", pbx)
+PY
 
 derived="$PWD/$apple_dir/DerivedData"
 mkdir -p "$derived"
 
-# Device archive requires an Apple team. Build the iphoneos .app unsigned, then zip IPA.
+common=(
+  "${selector[@]}"
+  -scheme "$scheme"
+  -configuration Debug
+  -sdk iphoneos
+  -derivedDataPath "$derived"
+  ARCHS=arm64
+  ONLY_ACTIVE_ARCH=NO
+  CODE_SIGN_STYLE=Manual
+  CODE_SIGNING_ALLOWED=NO
+  CODE_SIGNING_REQUIRED=NO
+  CODE_SIGN_IDENTITY=-
+  DEVELOPMENT_TEAM=
+  PROVISIONING_PROFILE=
+  PROVISIONING_PROFILE_SPECIFIER=
+)
+
 set +e
-xcodebuild \
-  $build_flag "$proj" \
-  -scheme "$scheme" \
-  -configuration Debug \
-  -sdk iphoneos \
-  -destination "generic/platform=iOS" \
-  -derivedDataPath "$derived" \
-  ARCHS=arm64 \
-  ONLY_ACTIVE_ARCH=NO \
-  CODE_SIGNING_ALLOWED=NO \
-  CODE_SIGNING_REQUIRED=NO \
-  CODE_SIGN_IDENTITY= \
-  CODE_SIGN_STYLE=Manual \
-  DEVELOPMENT_TEAM= \
-  PROVISIONING_PROFILE_SPECIFIER= \
-  build
-build_status=$?
+xcodebuild "${common[@]}" build
+status=$?
 set -e
-
-if [[ "$build_status" -ne 0 ]]; then
-  echo "Unsigned iphoneos build failed ($build_status); retrying with ad-hoc identity"
-  xcodebuild \
-    $build_flag "$proj" \
-    -scheme "$scheme" \
-    -configuration Debug \
-    -sdk iphoneos \
-    -destination "generic/platform=iOS" \
-    -derivedDataPath "$derived" \
-    ARCHS=arm64 \
-    ONLY_ACTIVE_ARCH=NO \
-    CODE_SIGN_IDENTITY=- \
-    CODE_SIGNING_ALLOWED=YES \
-    CODE_SIGNING_REQUIRED=NO \
-    CODE_SIGN_STYLE=Manual \
-    DEVELOPMENT_TEAM= \
-    PROVISIONING_PROFILE_SPECIFIER= \
-    build
+if [[ "$status" -ne 0 ]]; then
+  echo "xcodebuild exited $status"
+  exit "$status"
 fi
 
-app="$(find "$derived/Build/Products" -name '*.app' | grep -v Tests | grep iphoneos | head -n 1 || true)"
+app="$(find "$derived/Build/Products" -name '*.app' ! -name '*Tests*' | head -n 1 || true)"
 if [[ -z "$app" ]]; then
-  app="$(find "$derived" -name '*.app' | grep -v Tests | head -n 1 || true)"
-fi
-if [[ -z "$app" ]]; then
-  echo "No .app under $derived"
+  echo "No .app produced"
   find "$derived" -name '*.app' -print || true
   exit 1
 fi
