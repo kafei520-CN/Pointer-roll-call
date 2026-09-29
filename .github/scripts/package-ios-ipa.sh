@@ -37,9 +37,8 @@ sed -i '' \
   "$pbx"
 echo "patched $pbx"
 
-if [[ -f "$apple_dir/Podfile" ]]; then
-  (cd "$apple_dir" && pod install)
-fi
+# Skip CocoaPods: the generated Podfile lists a missing zhizhen-dianming_macOS
+# target and has no actual dependencies.
 
 # Xcode "Build Rust Code" reads gen/apple/.tauri/cli-options-server.json
 # written by `tauri ios build` / `tauri ios dev`. --open keeps the CLI
