@@ -115,6 +115,17 @@ describe('local roll-call flow', () => {
     expect(screen.getByText('张三')).toBeTruthy();
     expect(screen.queryByText('李四')).toBeNull();
 
+    await user.click(screen.getByRole('button', {name: '导出'}));
+    const exportDialog = await screen.findByRole('dialog');
+    expect(within(exportDialog).getByRole('button', {name: /已到/}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(exportDialog).getByRole('button', {name: /未到/}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(exportDialog).getByRole('button', {name: /缺/}).getAttribute('aria-pressed')).toBe('false');
+    expect(within(exportDialog).getByRole('button', {name: 'Markdown'})).toBeTruthy();
+    expect(within(exportDialog).getByRole('button', {name: '图片'})).toBeTruthy();
+    expect(within(exportDialog).getByRole('button', {name: '表格'})).toBeTruthy();
+    await user.click(within(exportDialog).getByRole('button', {name: 'Markdown'}));
+    expect(screen.queryByRole('dialog')).toBeNull();
+
     await user.click(screen.getByRole('button', {name: '关闭'}));
     const closeDialog = await screen.findByRole('dialog');
     await user.click(within(closeDialog).getByRole('button', {name: '关闭'}));

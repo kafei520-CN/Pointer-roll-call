@@ -1,11 +1,22 @@
 import {useEffect, useMemo, useState} from 'react';
 import {IconSearch} from '../icons';
+import {
+  EXPORT_GROUP_ORDER,
+  EXPORT_LABEL,
+  exportCounts,
+  exportFileStem,
+  exportSections,
+  saveBlob,
+  toMarkdown,
+  toPngBlob,
+  toXlsx,
+} from '../lib/export-roll';
 import {closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {matchesQuery} from '../lib/search';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
 import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
-import type {SessionPerson, Status} from '../types';
+import type {Session, SessionPerson, Status} from '../types';
 import {STATUSES} from '../types';
 import {Button, Modal, Shell, SheetTabs, TopBar, cx} from '../ui';
 
@@ -16,6 +27,10 @@ export function SessionView({id}: {id: string}) {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Status | 'all'>('all');
   const [closeOpen, setCloseOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportGroups, setExportGroups] = useState<Status[]>([]);
+  const [exportError, setExportError] = useState('');
+  const [exporting, setExporting] = useState(false);
   const swipeSheets = useHorizontalSwipe((direction) => {
     if (!session) {
       return;
@@ -60,11 +75,62 @@ export function SessionView({id}: {id: string}) {
 
   const stats = sheetStats(sheet);
   const all = sessionStats(session);
+  const roll = session;
 
   async function onClose() {
     await closeSession(id);
     setCloseOpen(false);
     go('/');
+  }
+
+  function openExport(current: Session) {
+    const counts = exportCounts(current);
+    setExportGroups(EXPORT_GROUP_ORDER.filter((status) => counts[status] > 0));
+    setExportError('');
+    setExportOpen(true);
+  }
+
+  async function runExport(format: 'md' | 'png' | 'xlsx') {
+    if (exportSections(roll, exportGroups).length === 0) {
+      setExportError('所选状态里没有人');
+      return;
+    }
+    const stem = exportFileStem(roll.name);
+    setExporting(true);
+    setExportError('');
+    try {
+      if (format === 'md') {
+        const text = toMarkdown(roll, exportGroups);
+        const result = await saveBlob(
+          `${stem}.md`,
+          new Blob([text], {type: 'text/markdown;charset=utf-8'}),
+        );
+        if (result !== 'cancelled') {
+          setExportOpen(false);
+        }
+      } else if (format === 'png') {
+        const png = await toPngBlob(roll, exportGroups);
+        const result = await saveBlob(`${stem}.png`, png);
+        if (result !== 'cancelled') {
+          setExportOpen(false);
+        }
+      } else {
+        const bytes = toXlsx(roll, exportGroups);
+        const result = await saveBlob(
+          `${stem}.xlsx`,
+          new Blob([bytes], {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        );
+        if (result !== 'cancelled') {
+          setExportOpen(false);
+        }
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : '导出失败');
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -78,19 +144,24 @@ export function SessionView({id}: {id: string}) {
         }
         onBack={() => go('/')}
         right={
-          session.closedAt ? (
-            <Button
-              variant="outline"
-              className="h-10 px-3 text-sm"
-              onClick={() => void reopenSession(session.id)}
-            >
-              继续
+          <div className="flex gap-2">
+            <Button variant="outline" className="h-10 px-3 text-sm" onClick={() => openExport(session)}>
+              导出
             </Button>
-          ) : (
-            <Button className="h-10 px-3 text-sm" onClick={() => setCloseOpen(true)}>
-              关闭
-            </Button>
-          )
+            {session.closedAt ? (
+              <Button
+                variant="outline"
+                className="h-10 px-3 text-sm"
+                onClick={() => void reopenSession(session.id)}
+              >
+                继续
+              </Button>
+            ) : (
+              <Button className="h-10 px-3 text-sm" onClick={() => setCloseOpen(true)}>
+                关闭
+              </Button>
+            )}
+          </div>
         }
       />
       <div className="space-y-3 px-4 pt-3">
@@ -144,6 +215,48 @@ export function SessionView({id}: {id: string}) {
         )}
       </main>
       <SheetTabs names={session.sheets} active={sheet.id} onChange={setSheetId} />
+      <Modal open={exportOpen} title="导出" onClose={() => setExportOpen(false)}>
+        <p className="text-xs text-mute">选择人员。未到是所有还没点到的人，包含每张工作表。</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {EXPORT_GROUP_ORDER.map((status) => {
+            const on = exportGroups.includes(status);
+            const count = exportCounts(session)[status];
+            return (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setExportGroups((current) =>
+                    current.includes(status)
+                      ? current.filter((item) => item !== status)
+                      : [...current, status],
+                  )
+                }
+                className={cx(
+                  'h-9 rounded-full px-3 text-xs',
+                  on ? 'bg-ink text-white' : 'bg-soft text-ink',
+                )}
+              >
+                {EXPORT_LABEL[status]} {count}
+              </button>
+            );
+          })}
+        </div>
+        <p className="mb-2 mt-4 text-xs text-mute">格式</p>
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('md')}>
+            Markdown
+          </Button>
+          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('png')}>
+            图片
+          </Button>
+          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('xlsx')}>
+            表格
+          </Button>
+        </div>
+        {exportError ? <p className="mt-3 text-sm">{exportError}</p> : null}
+      </Modal>
       <Modal open={closeOpen} title="关闭点名" onClose={() => setCloseOpen(false)}>
         <p className="text-sm text-mute">
           {stats.unset > 0
