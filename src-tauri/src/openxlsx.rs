@@ -1,6 +1,9 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Emitter, Manager, Runtime, Url};
+
+static OPENED_URLS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -146,6 +149,100 @@ fn path_from_url(url: &Url) -> Option<PathBuf> {
     Some(PathBuf::from(url.path()))
 }
 
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "ios", target_os = "android")),
+    allow(dead_code)
+)]
+pub fn remember_urls(urls: &[Url]) {
+    let mut slot = OPENED_URLS.lock().unwrap_or_else(|err| err.into_inner());
+    for url in urls {
+        let text = url.to_string();
+        if !slot.iter().any(|item| item == &text) {
+            slot.push(text);
+        }
+    }
+}
+
+fn remembered_urls() -> Vec<Url> {
+    OPENED_URLS
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .iter()
+        .filter_map(|text| text.parse().ok())
+        .collect()
+}
+
+fn opened_url_list() -> Vec<String> {
+    OPENED_URLS
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clone()
+}
+
+fn clear_remembered_urls() {
+    OPENED_URLS
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+        .clear();
+}
+
+fn content_stamp(data: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in data {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash ^ (data.len() as u64)
+}
+
+struct RecentCommit {
+    stamp: u64,
+    at: std::time::Instant,
+}
+
+static RECENT_COMMIT: Mutex<Option<RecentCommit>> = Mutex::new(None);
+
+fn remember_commit(data: &[u8]) {
+    let mut slot = RECENT_COMMIT.lock().unwrap_or_else(|err| err.into_inner());
+    *slot = Some(RecentCommit {
+        stamp: content_stamp(data),
+        at: std::time::Instant::now(),
+    });
+}
+
+fn recently_committed(data: &[u8]) -> bool {
+    let slot = RECENT_COMMIT.lock().unwrap_or_else(|err| err.into_inner());
+    let Some(recent) = slot.as_ref() else {
+        return false;
+    };
+    recent.stamp == content_stamp(data) && recent.at.elapsed() < std::time::Duration::from_secs(12)
+}
+
+fn pending_matches<R: Runtime>(app: &AppHandle<R>, data: &[u8]) -> bool {
+    pending_dirs(app).iter().any(|dir| {
+        std::fs::read(dir.join("pending_xlsx.bin"))
+            .map(|existing| existing == data)
+            .unwrap_or(false)
+    })
+}
+
+fn commit_bytes<R: Runtime>(app: &AppHandle<R>, name: &str, data: &[u8]) -> bool {
+    if data.is_empty() || !(is_spreadsheet(Path::new(name)) || looks_like_workbook(data)) {
+        return false;
+    }
+    if pending_matches(app, data) || recently_committed(data) {
+        remember_commit(data);
+        return true;
+    }
+    let stored = workbook_name(Path::new(name), data);
+    if !write_pending_all(app, &stored, data) {
+        return false;
+    }
+    remember_commit(data);
+    let _ = app.emit("xlsx-opened", ());
+    true
+}
+
 fn read_workbook(path: &Path) -> Option<Vec<u8>> {
     if let Ok(data) = std::fs::read(path) {
         if !data.is_empty() {
@@ -177,15 +274,195 @@ pub fn ingest_files<R: Runtime>(
             continue;
         }
         let name = workbook_name(&path, &data);
-        if !write_pending_all(app, &name, &data) {
+        if !commit_bytes(app, &name, &data) {
             continue;
         }
         #[cfg(target_os = "ios")]
         remove_inbox_file(&path);
-        let _ = app.emit("xlsx-opened", ());
         return true;
     }
     false
+}
+
+pub fn ingest_urls<R: Runtime>(app: &AppHandle<R>, urls: &[Url]) -> bool {
+    let mut paths = Vec::new();
+    for url in urls {
+        #[cfg(target_os = "android")]
+        if matches!(url.scheme(), "content" | "file") {
+            if let Some((name, data)) = read_android_uri(url) {
+                if commit_bytes(app, &name, &data) {
+                    return true;
+                }
+            }
+            if url.scheme() == "content" {
+                continue;
+            }
+        }
+        if let Some(path) = path_from_url(url) {
+            paths.push(path);
+        }
+    }
+    ingest_files(app, paths)
+}
+
+fn ingest_remembered<R: Runtime>(app: &AppHandle<R>) {
+    let urls = remembered_urls();
+    if !urls.is_empty() {
+        let _ = ingest_urls(app, &urls);
+    }
+}
+
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(decoded) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or(""),
+                16,
+            ) {
+                out.push(decoded);
+                index += 3;
+                continue;
+            }
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[cfg_attr(not(any(target_os = "android", test)), allow(dead_code))]
+fn name_from_opened_url(url: &Url) -> String {
+    let encoded = url
+        .path_segments()
+        .and_then(|segments| segments.rev().find(|segment| !segment.is_empty()))
+        .unwrap_or("import.xlsx");
+    let decoded = percent_decode(encoded);
+    if decoded.is_empty() {
+        "import.xlsx".to_string()
+    } else {
+        decoded
+    }
+}
+
+#[cfg(target_os = "android")]
+fn read_android_uri(url: &Url) -> Option<(String, Vec<u8>)> {
+    let ctx = ndk_context::android_context();
+    if ctx.vm().is_null() || ctx.context().is_null() {
+        return None;
+    }
+    let vm = unsafe { jni::JavaVM::from_raw(ctx.vm().cast()) }.ok()?;
+    let mut env = vm.attach_current_thread().ok()?;
+    let name = name_from_opened_url(url);
+    let read = env.with_local_frame(32, |frame| -> Result<Vec<u8>, jni::errors::Error> {
+        read_android_stream(frame, ctx.context(), url.as_str())
+    });
+    if read.is_err() {
+        let _ = env.exception_clear();
+    }
+    let data = read.ok()?;
+    if data.is_empty() {
+        return None;
+    }
+    Some((name, data))
+}
+
+#[cfg(target_os = "android")]
+fn read_android_stream(
+    env: &mut jni::JNIEnv,
+    context: *mut std::ffi::c_void,
+    url: &str,
+) -> Result<Vec<u8>, jni::errors::Error> {
+    let result = read_android_stream_inner(env, context, url);
+    if result.is_err() {
+        let _ = env.exception_clear();
+    }
+    result
+}
+
+#[cfg(target_os = "android")]
+fn read_android_stream_inner(
+    env: &mut jni::JNIEnv,
+    context: *mut std::ffi::c_void,
+    url: &str,
+) -> Result<Vec<u8>, jni::errors::Error> {
+    use jni::objects::{JByteArray, JObject, JValue};
+
+    let activity = unsafe { JObject::from_raw(context.cast()) };
+    if activity.as_raw().is_null() {
+        return Err(jni::errors::Error::NullPtr("context"));
+    }
+    let resolver = env
+        .call_method(
+            &activity,
+            "getContentResolver",
+            "()Landroid/content/ContentResolver;",
+            &[],
+        )?
+        .l()?;
+    if resolver.as_raw().is_null() {
+        return Err(jni::errors::Error::NullPtr("resolver"));
+    }
+    let jurl = env.new_string(url)?;
+    let uri = env
+        .call_static_method(
+            "android/net/Uri",
+            "parse",
+            "(Ljava/lang/String;)Landroid/net/Uri;",
+            &[JValue::Object(&jurl)],
+        )?
+        .l()?;
+    if uri.as_raw().is_null() {
+        return Err(jni::errors::Error::NullPtr("uri"));
+    }
+    let stream = env
+        .call_method(
+            &resolver,
+            "openInputStream",
+            "(Landroid/net/Uri;)Ljava/io/InputStream;",
+            &[JValue::Object(&uri)],
+        )?
+        .l()?;
+    if stream.as_raw().is_null() {
+        return Err(jni::errors::Error::NullPtr("stream"));
+    }
+    let output = env.new_object("java/io/ByteArrayOutputStream", "()V", &[])?;
+    let buf = env.new_byte_array(8192)?;
+    let mut total = 0i32;
+    loop {
+        let read = env
+            .call_method(&stream, "read", "([B)I", &[JValue::Object(&buf)])?
+            .i()?;
+        if read <= 0 {
+            break;
+        }
+        total += read;
+        if total > 32 * 1024 * 1024 {
+            let _ = env.call_method(&stream, "close", "()V", &[]);
+            let _ = env.exception_clear();
+            return Err(jni::errors::Error::NullPtr("workbook too large"));
+        }
+        env.call_method(
+            &output,
+            "write",
+            "([BII)V",
+            &[
+                JValue::Object(&buf),
+                JValue::Int(0),
+                JValue::Int(read),
+            ],
+        )?;
+    }
+    let array = env.call_method(&output, "toByteArray", "()[B", &[])?.l()?;
+    let bytes = env.convert_byte_array(JByteArray::from(array))?;
+    let closed = env.call_method(&stream, "close", "()V", &[]);
+    if closed.is_err() {
+        let _ = env.exception_clear();
+    }
+    Ok(bytes)
 }
 
 pub fn ingest_inbox<R: Runtime>(app: &AppHandle<R>) {
@@ -311,10 +588,18 @@ fn stash_bytes(name: &str, data: &[u8]) -> bool {
     if data.is_empty() || !(is_spreadsheet(Path::new(name)) || looks_like_workbook(data)) {
         return false;
     }
+    if recently_committed(data) {
+        remember_commit(data);
+        return true;
+    }
     let stored = workbook_name(Path::new(name), data);
-    ios_cache_dirs()
+    let wrote = ios_cache_dirs()
         .iter()
-        .any(|dir| write_pending(dir, &stored, data))
+        .any(|dir| write_pending(dir, &stored, data));
+    if wrote {
+        remember_commit(data);
+    }
+    wrote
 }
 
 #[cfg(target_os = "ios")]
@@ -324,32 +609,58 @@ mod scene_hook {
     use super::{remove_inbox_file, stash_bytes};
 
     static WILL_CONNECT_IMP: AtomicUsize = AtomicUsize::new(0);
+    static CONFIG_IMP: AtomicUsize = AtomicUsize::new(0);
 
-    /// Tao drops `UISceneConnectionOptions.URLContexts` inside
-    /// `scene:willConnectToSession:options:`. A cold start delivers the file
-    /// only there, so copy the bytes before the original implementation runs.
+    /// Tao drops `UISceneConnectionOptions.URLContexts` on a cold start.
+    /// Copy the file from both scene callbacks that receive those options.
+    /// A failed lookup of one class must not skip the other.
     pub fn install() {
         unsafe {
-            if WILL_CONNECT_IMP.load(Ordering::Relaxed) != 0 {
-                return;
-            }
-            let class = objc_getClass(c"TaoSceneDelegate".as_ptr());
-            if class.is_null() {
-                return;
-            }
-            let selector = sel_registerName(c"scene:willConnectToSession:options:".as_ptr());
-            let method = class_getInstanceMethod(class, selector);
-            if method.is_null() {
-                return;
-            }
-            let previous = method_setImplementation(
-                method,
+            swizzle(
+                c"TaoSceneDelegate",
+                c"scene:willConnectToSession:options:",
+                &WILL_CONNECT_IMP,
                 std::mem::transmute::<*const (), *const std::ffi::c_void>(will_connect as *const ()),
             );
-            if !previous.is_null() {
-                WILL_CONNECT_IMP.store(previous as usize, Ordering::Relaxed);
-            }
+            swizzle(
+                c"AppDelegate",
+                c"application:configurationForConnectingSceneSession:options:",
+                &CONFIG_IMP,
+                std::mem::transmute::<*const (), *const std::ffi::c_void>(
+                    configuration_for_connecting as *const (),
+                ),
+            );
         }
+    }
+
+    unsafe fn swizzle(
+        class_name: &std::ffi::CStr,
+        selector_name: &std::ffi::CStr,
+        slot: &AtomicUsize,
+        implementation: *const std::ffi::c_void,
+    ) {
+        if slot.load(Ordering::Relaxed) != 0 {
+            return;
+        }
+        let class = objc_getClass(class_name.as_ptr());
+        if class.is_null() {
+            return;
+        }
+        let selector = sel_registerName(selector_name.as_ptr());
+        let method = class_getInstanceMethod(class, selector);
+        if method.is_null() {
+            return;
+        }
+        let current = method_getImplementation(method);
+        if current.is_null() {
+            return;
+        }
+        let previous = method_setImplementation(method, implementation);
+        if previous.is_null() {
+            method_setImplementation(method, current);
+            return;
+        }
+        slot.store(previous as usize, Ordering::Relaxed);
     }
 
     unsafe extern "C" fn will_connect(
@@ -371,6 +682,28 @@ mod scene_hook {
             ) = std::mem::transmute(previous);
             original(this, cmd, scene, session, options);
         }
+    }
+
+    unsafe extern "C" fn configuration_for_connecting(
+        this: *mut std::ffi::c_void,
+        cmd: *const std::ffi::c_void,
+        application: *mut std::ffi::c_void,
+        session: *mut std::ffi::c_void,
+        options: *mut std::ffi::c_void,
+    ) -> *mut std::ffi::c_void {
+        capture_connection_urls(options);
+        let previous = CONFIG_IMP.load(Ordering::Relaxed);
+        if previous == 0 {
+            return std::ptr::null_mut();
+        }
+        let original: unsafe extern "C" fn(
+            *mut std::ffi::c_void,
+            *const std::ffi::c_void,
+            *mut std::ffi::c_void,
+            *mut std::ffi::c_void,
+            *mut std::ffi::c_void,
+        ) -> *mut std::ffi::c_void = std::mem::transmute(previous);
+        original(this, cmd, application, session, options)
     }
 
     unsafe fn capture_connection_urls(options: *mut std::ffi::c_void) {
@@ -515,6 +848,7 @@ mod scene_hook {
             class: *mut std::ffi::c_void,
             selector: *const std::ffi::c_void,
         ) -> *mut std::ffi::c_void;
+        fn method_getImplementation(method: *mut std::ffi::c_void) -> *const std::ffi::c_void;
         fn method_setImplementation(
             method: *mut std::ffi::c_void,
             implementation: *const std::ffi::c_void,
@@ -640,19 +974,26 @@ fn schedule_inbox_retries<R: Runtime>(app: AppHandle<R>) {
     std::thread::spawn(move || {
         for delay in [300, 1200, 3000, 7000] {
             std::thread::sleep(std::time::Duration::from_millis(delay));
+            ingest_remembered(&app);
             ingest_inbox(&app);
         }
     });
 }
 
 #[tauri::command]
-fn scan_opened_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
+pub fn opened_urls() -> Vec<String> {
+    opened_url_list()
+}
+
+#[tauri::command]
+pub fn scan_opened_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
+    ingest_remembered(&app);
     ingest_inbox(&app);
     take_pending_xlsx(app)
 }
 
 #[tauri::command]
-fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
+pub fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
     for dir in pending_dirs(&app) {
         let data_path = dir.join("pending_xlsx.bin");
         if !data_path.is_file() {
@@ -667,6 +1008,7 @@ fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx
         if data.is_empty() {
             return Ok(None);
         }
+        clear_remembered_urls();
         return Ok(Some(PendingXlsx { file_name, data }));
     }
     Ok(None)
@@ -674,7 +1016,6 @@ fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::<R>::new("openxlsx")
-        .invoke_handler(tauri::generate_handler![take_pending_xlsx, scan_opened_xlsx])
         .setup(|app, api| {
             #[cfg(target_os = "android")]
             api.register_android_plugin("com.zhizhen.dianming", "OpenXlsxPlugin")?;
@@ -693,7 +1034,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
 
 #[cfg(test)]
 mod tests {
-    use super::{looks_like_workbook, safe_filename};
+    use super::{content_stamp, looks_like_workbook, name_from_opened_url, safe_filename};
+    use tauri::Url;
 
     #[test]
     fn keeps_a_chinese_workbook_name() {
@@ -706,5 +1048,20 @@ mod tests {
         assert!(looks_like_workbook(b"PK\x03\x04rest"));
         assert!(looks_like_workbook(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1]));
         assert!(!looks_like_workbook(b"hello"));
+    }
+
+    #[test]
+    fn names_a_content_uri_from_its_last_segment() {
+        let url: Url =
+            "content://com.android.externalstorage.documents/document/primary%3ADownload%2Ffoo.xlsx"
+                .parse()
+                .unwrap();
+        assert_eq!(name_from_opened_url(&url), "primary:Download/foo.xlsx");
+    }
+
+    #[test]
+    fn stamps_the_same_bytes_once() {
+        assert_eq!(content_stamp(b"abc"), content_stamp(b"abc"));
+        assert_ne!(content_stamp(b"abc"), content_stamp(b"abd"));
     }
 }

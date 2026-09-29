@@ -39,6 +39,16 @@ export function subscribeOpenedXlsx(handler: OpenHandler): () => void {
   };
 }
 
+async function fileKey(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let hash = 2166136261;
+  for (let index = 0; index < bytes.length; index += 1) {
+    hash ^= bytes[index];
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${file.size}:${hash >>> 0}`;
+}
+
 export function consumeOpenedXlsx(): void {
   queued = null;
 }
@@ -52,9 +62,9 @@ async function takePending(): Promise<File | null> {
   const {invoke} = await import('@tauri-apps/api/core');
   let pending: PendingXlsx | null = null;
   try {
-    pending = await invoke<PendingXlsx | null>('plugin:openxlsx|scan_opened_xlsx');
+    pending = await invoke<PendingXlsx | null>('scan_opened_xlsx');
   } catch {
-    pending = await invoke<PendingXlsx | null>('plugin:openxlsx|take_pending_xlsx');
+    pending = await invoke<PendingXlsx | null>('take_pending_xlsx');
   }
   if (!pending?.data) {
     return null;
@@ -68,6 +78,8 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
   }
   let closed = false;
   let chain = Promise.resolve();
+  let lastKey = '';
+  let lastAt = 0;
   const pull = () => {
     chain = chain
       .then(async () => {
@@ -75,11 +87,21 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
           return;
         }
         const file = await takePending();
-        if (file && !closed) {
-          onFile(file);
+        if (!file || closed) {
+          return;
         }
+        const key = await fileKey(file);
+        const now = Date.now();
+        if (key === lastKey && now - lastAt < 15000) {
+          return;
+        }
+        lastKey = key;
+        lastAt = now;
+        onFile(file);
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        console.error(error);
+      });
   };
   pull();
   const timers = [400, 1200, 3000, 8000].map((delay) => window.setTimeout(pull, delay));
@@ -110,8 +132,12 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
     const stop = await listen('xlsx-opened', () => {
       pull();
     });
+    const stopOpened = await listen('opened', () => {
+      pull();
+    });
     unlisten = () => {
       stop();
+      stopOpened();
     };
   } catch {
     // The event API is unavailable outside the native shell.
