@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
-use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Emitter, Manager, Runtime};
+use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Emitter, Manager, Runtime, Url};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,6 +49,22 @@ fn seed_from_cli<R: Runtime>(app: &AppHandle<R>) {
         let _ = write_pending(&dir, name, &data);
         break;
     }
+}
+
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
+pub fn paths_from_urls(urls: &[Url]) -> Vec<PathBuf> {
+    urls.iter().filter_map(path_from_url).collect()
+}
+
+#[cfg_attr(not(any(target_os = "macos", target_os = "ios")), allow(dead_code))]
+fn path_from_url(url: &Url) -> Option<PathBuf> {
+    if let Ok(path) = url.to_file_path() {
+        return Some(path);
+    }
+    if url.scheme() != "file" || url.path().is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(url.path()))
 }
 
 /// Read spreadsheets the OS handed the app and keep one copy for the webview.
@@ -140,6 +156,12 @@ fn remove_inbox_file(path: &Path) {
 }
 
 #[tauri::command]
+fn scan_opened_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
+    ingest_inbox(&app);
+    take_pending_xlsx(app)
+}
+
+#[tauri::command]
 fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx>, String> {
     let dir = app.path().app_cache_dir().map_err(|err| err.to_string())?;
     let data_path = dir.join("pending_xlsx.bin");
@@ -158,7 +180,7 @@ fn take_pending_xlsx<R: Runtime>(app: AppHandle<R>) -> Result<Option<PendingXlsx
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::<R>::new("openxlsx")
-        .invoke_handler(tauri::generate_handler![take_pending_xlsx])
+        .invoke_handler(tauri::generate_handler![take_pending_xlsx, scan_opened_xlsx])
         .setup(|app, api| {
             #[cfg(target_os = "android")]
             api.register_android_plugin("com.zhizhen.dianming", "OpenXlsxPlugin")?;

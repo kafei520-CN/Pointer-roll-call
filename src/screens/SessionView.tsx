@@ -6,12 +6,12 @@ import {
   exportCounts,
   exportFileStem,
   exportTables,
-  saveBlob,
   toMarkdown,
   toPngBlob,
   toXlsx,
   type ExportShape,
 } from '../lib/export-roll';
+import {stageExport} from '../lib/export-handoff';
 import {closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {matchesQuery} from '../lib/search';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
@@ -110,36 +110,36 @@ export function SessionView({id}: {id: string}) {
       return;
     }
     const stem = exportFileStem(roll.name);
+    const back = `/session/${roll.id}`;
     setExporting(true);
     setExportError('');
     try {
       if (format === 'md') {
         const text = toMarkdown(roll, exportGroups, exportShape, labels);
-        const result = await saveBlob(
-          `${stem}.md`,
-          new Blob([text], {type: 'text/markdown;charset=utf-8'}),
-        );
-        if (result !== 'cancelled') {
-          setExportOpen(false);
-        }
+        stageExport({
+          filename: `${stem}.md`,
+          blob: new Blob([text], {type: 'text/markdown;charset=utf-8'}),
+          text,
+          kind: 'md',
+          back,
+        });
       } else if (format === 'png') {
         const png = await toPngBlob(roll, exportGroups, exportShape, labels);
-        const result = await saveBlob(`${stem}.png`, png);
-        if (result !== 'cancelled') {
-          setExportOpen(false);
-        }
+        stageExport({filename: `${stem}.png`, blob: png, text: '', kind: 'png', back});
       } else {
         const bytes = toXlsx(roll, exportGroups, exportShape, labels);
-        const result = await saveBlob(
-          `${stem}.xlsx`,
-          new Blob([bytes], {
+        stageExport({
+          filename: `${stem}.xlsx`,
+          blob: new Blob([bytes], {
             type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           }),
-        );
-        if (result !== 'cancelled') {
-          setExportOpen(false);
-        }
+          text: '',
+          kind: 'xlsx',
+          back,
+        });
       }
+      setExportOpen(false);
+      go('/export');
     } catch (error) {
       setExportError(error instanceof Error ? error.message : '导出失败');
     } finally {

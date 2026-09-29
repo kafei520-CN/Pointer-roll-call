@@ -9,11 +9,15 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
-            if let tauri::RunEvent::Opened { urls } = event {
-                let paths = urls.into_iter().filter_map(|url| url.to_file_path().ok());
+            if let tauri::RunEvent::Opened { urls } = &event {
+                let paths = openxlsx::paths_from_urls(urls);
                 if !openxlsx::ingest_files(app, paths) {
                     openxlsx::ingest_inbox(app);
                 }
+            }
+            #[cfg(target_os = "ios")]
+            if let tauri::RunEvent::Resumed = &event {
+                openxlsx::ingest_inbox(app);
             }
             #[cfg(not(any(target_os = "macos", target_os = "ios")))]
             let _ = (app, event);

@@ -228,13 +228,13 @@ export function Modal({
     return null;
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-3 sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:items-center">
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"
+        className="max-h-[85dvh] w-full min-w-0 max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-xl"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 id="dialog-title" className="text-base font-semibold">

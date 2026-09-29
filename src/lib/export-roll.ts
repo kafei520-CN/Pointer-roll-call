@@ -252,37 +252,7 @@ function uniqueSheetName(name: string, used: Set<string>): string {
   return title;
 }
 
-export async function saveBlob(filename: string, blob: Blob): Promise<'shared' | 'saved' | 'cancelled'> {
-  if (typeof navigator.share === 'function') {
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    const file = new File([bytes], filename, {type: blob.type || 'application/octet-stream'});
-    const payload = {files: [file], title: filename};
-    const allowed = typeof navigator.canShare !== 'function' || navigator.canShare(payload);
-    if (allowed) {
-      try {
-        await navigator.share(payload);
-        return 'shared';
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return 'cancelled';
-        }
-      }
-    }
-  }
-  const url = await downloadUrl(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  if (url.startsWith('blob:')) {
-    URL.revokeObjectURL(url);
-  }
-  return 'saved';
-}
-
-async function downloadUrl(blob: Blob): Promise<string> {
+export async function blobHref(blob: Blob): Promise<string> {
   if (typeof URL.createObjectURL === 'function') {
     try {
       return URL.createObjectURL(blob);

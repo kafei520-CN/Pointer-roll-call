@@ -50,7 +50,12 @@ export function resetOpenWith(): void {
 
 async function takePending(): Promise<File | null> {
   const {invoke} = await import('@tauri-apps/api/core');
-  const pending = await invoke<PendingXlsx | null>('plugin:openxlsx|take_pending_xlsx');
+  let pending: PendingXlsx | null = null;
+  try {
+    pending = await invoke<PendingXlsx | null>('plugin:openxlsx|scan_opened_xlsx');
+  } catch {
+    pending = await invoke<PendingXlsx | null>('plugin:openxlsx|take_pending_xlsx');
+  }
   if (!pending?.data) {
     return null;
   }
@@ -77,7 +82,13 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
       .catch(() => undefined);
   };
   pull();
-  const timers = [400, 1200].map((delay) => window.setTimeout(pull, delay));
+  const timers = [400, 1200, 3000].map((delay) => window.setTimeout(pull, delay));
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+      pull();
+    }
+  };
+  document.addEventListener('visibilitychange', onVisible);
   let unregisterPlugin = () => undefined as void;
   let unlisten = () => undefined as void;
   try {
@@ -107,6 +118,7 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
   }
   return () => {
     closed = true;
+    document.removeEventListener('visibilitychange', onVisible);
     for (const timer of timers) {
       window.clearTimeout(timer);
     }

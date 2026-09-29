@@ -2,7 +2,8 @@ export type Route =
   | {name: 'home'}
   | {name: 'import'}
   | {name: 'template'; id: string}
-  | {name: 'session'; id: string};
+  | {name: 'session'; id: string}
+  | {name: 'export'};
 
 export function parseHash(): Route {
   const hash = window.location.hash.replace(/^#/, '') || '/';
@@ -15,6 +16,9 @@ export function parseHash(): Route {
   }
   if (parts[0] === 'session' && parts[1]) {
     return {name: 'session', id: parts[1]};
+  }
+  if (parts[0] === 'export') {
+    return {name: 'export'};
   }
   return {name: 'home'};
 }

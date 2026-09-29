@@ -3,6 +3,7 @@ import {openOpenedWorkbook} from './lib/opened-template';
 import {setupOpenWith} from './lib/open-with';
 import {hydrate, useApp} from './lib/store';
 import {parseHash, type Route} from './router';
+import {ExportPage} from './screens/ExportPage';
 import {Home} from './screens/Home';
 import {ImportWizard} from './screens/ImportWizard';
 import {SessionView} from './screens/SessionView';
@@ -53,6 +54,8 @@ export default function App() {
       return <TemplateEditor id={route.id} />;
     case 'session':
       return <SessionView id={route.id} />;
+    case 'export':
+      return <ExportPage />;
     default:
       return <Home />;
   }
