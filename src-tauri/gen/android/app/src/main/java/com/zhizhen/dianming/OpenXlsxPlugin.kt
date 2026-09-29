@@ -128,10 +128,22 @@ class OpenXlsxPlugin(private val activity: Activity) : Plugin(activity) {
     }
 
     private fun readBytes(uri: Uri): ByteArray? {
-        return try {
-            activity.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        try {
+            activity.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         } catch (_: Exception) {
-            null
         }
+        try {
+            activity.contentResolver.openInputStream(uri)?.use { return it.readBytes() }
+        } catch (_: Exception) {
+        }
+        if (uri.scheme == "file") {
+            val path = uri.path ?: return null
+            return try {
+                File(path).takeIf { it.isFile }?.readBytes()
+            } catch (_: Exception) {
+                null
+            }
+        }
+        return null
     }
 }
