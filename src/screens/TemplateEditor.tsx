@@ -17,7 +17,6 @@ export function TemplateEditor({id}: {id: string}) {
   const [newName, setNewName] = useState('');
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
-  const [savedFlash, setSavedFlash] = useState('');
   const swipeSheets = useHorizontalSwipe((direction) => {
     const index = sheets.findIndex((item) => item.id === sheetId);
     const next = sheets[index + direction];
@@ -95,8 +94,7 @@ export function TemplateEditor({id}: {id: string}) {
 
   async function save() {
     await upsertTemplate({...currentTemplate(), draft: false});
-    setSavedFlash('模板已保存');
-    window.setTimeout(() => setSavedFlash(''), 1600);
+    go('/');
   }
 
   return (
@@ -116,7 +114,6 @@ export function TemplateEditor({id}: {id: string}) {
           setName(value);
           void persist({...currentTemplate(), name: value.trim() || '未命名模板'});
         }} />
-        {savedFlash ? <p className="text-xs text-mute">{savedFlash}</p> : null}
       </div>
       <main className="flex-1 overflow-y-auto px-4 py-3" data-testid="menu-swipe" {...swipeSheets}>
         <div className="mb-3 flex items-center justify-between">

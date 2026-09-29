@@ -70,7 +70,9 @@ describe('local roll-call flow', () => {
     expect(await screen.findByRole('heading', {name: '编辑模板'})).toBeTruthy();
 
     await user.click(screen.getByRole('button', {name: '保存'}));
-    expect(await screen.findByText('模板已保存')).toBeTruthy();
+    expect(await screen.findByRole('heading', {name: '指针点名'})).toBeTruthy();
+    await user.click(screen.getByRole('button', {name: '模板'}));
+    expect(await screen.findByText('班级')).toBeTruthy();
   });
 
   it('creates a session from a template, searches by initials, closes into history', async () => {
@@ -94,8 +96,7 @@ describe('local roll-call flow', () => {
     expect(within(screen.getByDisplayValue('李四').closest('li') as HTMLElement).getByText('2')).toBeTruthy();
 
     await user.click(screen.getByRole('button', {name: '保存'}));
-    await screen.findByText('模板已保存');
-    await user.click(screen.getByRole('button', {name: '返回'}));
+    expect(await screen.findByRole('heading', {name: '指针点名'})).toBeTruthy();
 
     await user.click(await screen.findByRole('button', {name: '从模板新建'}));
     const dialog = await screen.findByRole('dialog');
