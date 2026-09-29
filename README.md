@@ -66,7 +66,7 @@ npm run tauri ios dev
 - Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
 - iOS：`macos-latest`，debug IPA，产物名 `ios-ipa`
 
-iOS 签名需要 Apple 开发者证书。未配置证书时，iOS 任务可能失败；Android 不受影响。
+iOS 产物是未签名 debug IPA，可用爱思自签后装到手机。Android 是 ARM64 debug APK。
 
 ## 测试
 
