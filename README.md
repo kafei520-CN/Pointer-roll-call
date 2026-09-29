@@ -38,9 +38,9 @@ npm run tauri dev
 
 打好的安装包：
 
-`release/指针点名-0.1.0-arm64-debug.apk`
+`src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
 
-这是 ARM64 debug 包，可用爱思助手或 `adb install` 装到手机。包名 `com.zhizhen.dianming`。
+这是 ARM64 正式包，已用仓库里的侧载证书签名，可用爱思助手或 `adb install` 装到手机。包名 `com.zhizhen.dianming`。从以前的调试包升级时，如果系统提示签名不一致，先卸载旧的「指针点名」再安装。
 
 重新打包（项目路径含中文时，请先复制到纯英文目录再编）：
 
@@ -49,7 +49,7 @@ set JAVA_HOME=C:\Program Files\Microsoft\jdk-21.0.12.101-hotspot
 set ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk
 set NDK_HOME=%ANDROID_HOME%\ndk\29.0.13846066
 npm run tauri android init
-npm run tauri android build -- --debug --apk --target aarch64
+npm run tauri android build -- --apk --target aarch64
 ```
 
 ## iOS
@@ -66,10 +66,10 @@ npm run tauri ios dev
 推送到 `main` 会发布网页，并打包 Android 与 iOS。开 PR 只跑移动端检查。也可在 Actions 里手动 Run workflow。
 
 - 网页：GitHub Pages，`https://mckafei.top/Pointer-roll-call/`
-- Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
+- Android：`ubuntu-latest`，ARM64 正式 APK，产物名 `android-apk`
 - iOS：`macos-latest`，未签名 release IPA，产物名 `ios-ipa`
 
-iOS 包没有签名，安装包名是 `zhizhen-dianming`，桌面名称仍是「指针点名」。交给企业签或爱思重签后再安装。Android 是 ARM64 debug APK。
+iOS 包没有签名，安装包名是 `zhizhen-dianming`，桌面名称仍是「指针点名」。交给企业签或爱思重签后再安装。Android 是 ARM64 正式 APK，用仓库里的侧载证书签名。
 
 ## 测试
 
