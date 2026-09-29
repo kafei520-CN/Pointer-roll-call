@@ -24,6 +24,8 @@ npm run dev
 
 浏览器打开 `http://localhost:1420`。示例名单：`public/sample-class.xlsx`（`npm run sample` 可重新生成）。
 
+线上地址：<https://kafei520-CN.github.io/Pointer-roll-call/>
+
 ## 桌面（Tauri）
 
 ```bash
@@ -61,8 +63,9 @@ npm run tauri ios dev
 
 ## GitHub Actions
 
-仓库只打 Android 与 iOS。推送到 `main`、开 PR，或在 Actions 里手动 Run workflow。
+推送到 `main` 会发布网页，并打包 Android 与 iOS。开 PR 只跑移动端检查。也可在 Actions 里手动 Run workflow。
 
+- 网页：GitHub Pages，`https://kafei520-CN.github.io/Pointer-roll-call/`
 - Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
 - iOS：`macos-latest`，debug IPA，产物名 `ios-ipa`
 

@@ -6,7 +6,22 @@ import process from "node:process";
 
 const host = process.env.TAURI_DEV_HOST;
 
+// Tauri serves the built files from the app root. GitHub Pages project sites
+// are served from /<repo>/, so only the Pages workflow sets VITE_BASE.
+function siteBase(): string {
+  if (process.env.TAURI_ENV_PLATFORM) {
+    return "/";
+  }
+  const configured = process.env.VITE_BASE?.trim();
+  if (!configured) {
+    return "/";
+  }
+  const withLeading = configured.startsWith("/") ? configured : `/${configured}`;
+  return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
+}
+
 export default defineConfig(() => ({
+  base: siteBase(),
   plugins: [react(), tailwindcss()],
   test: {
     environment: "node",
