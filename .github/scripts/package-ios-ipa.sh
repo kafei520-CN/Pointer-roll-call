@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Unsigned iOS IPA for 爱思/AltStore:
+# Unsigned release IPA for enterprise signing and 爱思:
 #   1. tauri ios init (workflow)
 #   2. sed pbxproj: Manual signing, empty team/cert
 #   3. keep `tauri ios build --open` alive for cli-options-server.json
-#   4. xcodebuild build + CODE_SIGNING_ALLOWED=NO (no archive/export)
+#   4. xcodebuild release + CODE_SIGNING_ALLOWED=NO (no archive/export)
 #   5. Payload/*.app -> zip IPA
+#
+# A debug build is a 70KB stub plus 指针点名.debug.dylib. Enterprise
+# signers sign the stub, and iOS kills the app as soon as it opens.
 set -euo pipefail
 
 export CI=true
@@ -43,7 +46,7 @@ echo "patched $pbx"
 # Xcode "Build Rust Code" reads gen/apple/.tauri/cli-options-server.json
 # written by `tauri ios build` / `tauri ios dev`. --open keeps the CLI
 # (and the RPC server) running without archiving.
-npx tauri ios build --ci --debug --open > tauri-ios-open.log 2>&1 &
+npx tauri ios build --ci --open > tauri-ios-open.log 2>&1 &
 tauri_pid=$!
 cleanup() {
   kill "$tauri_pid" 2>/dev/null || true
@@ -78,12 +81,14 @@ set +e
 xcodebuild \
   -project "$apple_dir/zhizhen-dianming.xcodeproj" \
   -scheme "$scheme" \
-  -configuration debug \
+  -configuration release \
   -sdk iphoneos \
   -destination "generic/platform=iOS" \
   -derivedDataPath "$derived" \
   ARCHS=arm64 \
   ONLY_ACTIVE_ARCH=NO \
+  ENABLE_DEBUG_DYLIB=NO \
+  ENABLE_PREVIEWS=NO \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO \
   CODE_SIGN_IDENTITY="" \
@@ -100,12 +105,11 @@ app=""
 while IFS= read -r line; do
   app="$line"
   break
-done < <(find "$derived/Build/Products" -name '*.app' ! -name '*Tests*' 2>/dev/null)
+done < <(find "$derived/Build/Products/release-iphoneos" -name '*.app' ! -name '*Tests*' 2>/dev/null)
 if [[ -z "$app" ]]; then
-  while IFS= read -r line; do
-    app="$line"
-    break
-  done < <(find "$apple_dir" "$derived" -name '*.app' ! -name '*Tests*' 2>/dev/null)
+  echo "no release-iphoneos app"
+  find "$derived/Build/Products" -name '*.app' -print || true
+  exit 1
 fi
 
 # 65 = xcodebuild failure; continue if the .app still exists.
@@ -119,6 +123,19 @@ if [[ -z "$app" ]]; then
   exit 1
 fi
 echo "using app $app"
+find "$app" -type f -exec ls -lh {} \;
+
+if find "$app" \( -name '*.debug.dylib' -o -name '__preview.dylib' \) | grep -q .; then
+  echo "refusing to pack a debug-dylib app; enterprise signing cannot launch it"
+  exit 1
+fi
+exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+exe_size="$(stat -f%z "$app/$exe")"
+echo "executable $exe is $exe_size bytes"
+if [[ "$exe_size" -lt 1000000 ]]; then
+  echo "executable is only a stub, so the release build did not link the app"
+  exit 1
+fi
 
 mkdir -p "$apple_dir/build"
 work="$(mktemp -d)"
@@ -128,4 +145,4 @@ rm -f "$ipa"
 (cd "$work" && zip -qry "$ipa" Payload)
 echo "wrote $ipa"
 ls -lh "$ipa"
-echo "爱思安装时请对 App 和 Tauri.framework 分别做 Apple ID 签名"
+echo "unsigned release IPA; enterprise or 爱思 signing can install it"

@@ -67,9 +67,9 @@ npm run tauri ios dev
 
 - 网页：GitHub Pages，`https://mckafei.top/Pointer-roll-call/`
 - Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
-- iOS：`macos-latest`，debug IPA，产物名 `ios-ipa`
+- iOS：`macos-latest`，未签名 release IPA，产物名 `ios-ipa`
 
-iOS 产物是未签名 debug IPA。用爱思「Apple ID 签名」安装时，请对主程序和 `Tauri.framework` 分别重签。Android 是 ARM64 debug APK。
+iOS 包没有签名，交给企业签或爱思重签后再安装。Android 是 ARM64 debug APK。
 
 ## 测试
 
