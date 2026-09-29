@@ -111,6 +111,8 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
     }
   };
   document.addEventListener('visibilitychange', onVisible);
+  window.addEventListener('focus', pull);
+  window.addEventListener('pageshow', pull);
   let unregisterPlugin = () => undefined as void;
   let unlisten = () => undefined as void;
   try {
@@ -145,6 +147,8 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
   return () => {
     closed = true;
     document.removeEventListener('visibilitychange', onVisible);
+    window.removeEventListener('focus', pull);
+    window.removeEventListener('pageshow', pull);
     for (const timer of timers) {
       window.clearTimeout(timer);
     }

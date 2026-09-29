@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::{plugin::Builder, plugin::TauriPlugin, AppHandle, Emitter, Manager, Runtime, Url};
 
@@ -112,6 +113,45 @@ fn clear_pending<R: Runtime>(app: &AppHandle<R>) {
         let _ = std::fs::remove_file(dir.join("pending_xlsx.bin"));
         let _ = std::fs::remove_file(dir.join("pending_xlsx.name"));
     }
+}
+
+#[cfg_attr(
+    not(any(target_os = "ios", target_os = "android")),
+    allow(dead_code)
+)]
+fn has_pending<R: Runtime>(app: &AppHandle<R>) -> bool {
+    pending_dirs(app).iter().any(|dir| {
+        std::fs::metadata(dir.join("pending_xlsx.bin"))
+            .map(|meta| meta.len() > 0)
+            .unwrap_or(false)
+    })
+}
+
+static NUDGE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// The webview drops events while it is suspended. Repeat the notice after it can run again.
+#[cfg_attr(
+    not(any(target_os = "ios", target_os = "android")),
+    allow(dead_code)
+)]
+pub fn nudge_pending<R: Runtime>(app: AppHandle<R>) {
+    let generation = NUDGE_GEN.fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+    std::thread::spawn(move || {
+        let mut waited = 0u64;
+        for delay in [0u64, 400, 1200, 3000] {
+            let step = delay.saturating_sub(waited);
+            if step > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(step));
+            }
+            waited = delay;
+            if NUDGE_GEN.load(Ordering::Relaxed) != generation {
+                return;
+            }
+            if has_pending(&app) {
+                let _ = app.emit("xlsx-opened", ());
+            }
+        }
+    });
 }
 
 fn seed_from_cli<R: Runtime>(app: &AppHandle<R>) {
@@ -610,9 +650,11 @@ mod scene_hook {
 
     static WILL_CONNECT_IMP: AtomicUsize = AtomicUsize::new(0);
     static CONFIG_IMP: AtomicUsize = AtomicUsize::new(0);
+    static OPEN_URL_IMP: AtomicUsize = AtomicUsize::new(0);
 
     /// Tao drops `UISceneConnectionOptions.URLContexts` on a cold start.
-    /// Copy the file from both scene callbacks that receive those options.
+    /// A warm start reaches `scene:openURLContexts:` without the security scope.
+    /// Copy the file from each callback that still has the original NSURL.
     /// A failed lookup of one class must not skip the other.
     pub fn install() {
         unsafe {
@@ -621,6 +663,14 @@ mod scene_hook {
                 c"scene:willConnectToSession:options:",
                 &WILL_CONNECT_IMP,
                 std::mem::transmute::<*const (), *const std::ffi::c_void>(will_connect as *const ()),
+            );
+            swizzle(
+                c"TaoSceneDelegate",
+                c"scene:openURLContexts:",
+                &OPEN_URL_IMP,
+                std::mem::transmute::<*const (), *const std::ffi::c_void>(
+                    open_url_contexts as *const (),
+                ),
             );
             swizzle(
                 c"AppDelegate",
@@ -706,11 +756,33 @@ mod scene_hook {
         original(this, cmd, application, session, options)
     }
 
+    unsafe extern "C" fn open_url_contexts(
+        this: *mut std::ffi::c_void,
+        cmd: *const std::ffi::c_void,
+        scene: *mut std::ffi::c_void,
+        contexts: *mut std::ffi::c_void,
+    ) {
+        capture_url_set(contexts);
+        let previous = OPEN_URL_IMP.load(Ordering::Relaxed);
+        if previous != 0 {
+            let original: unsafe extern "C" fn(
+                *mut std::ffi::c_void,
+                *const std::ffi::c_void,
+                *mut std::ffi::c_void,
+                *mut std::ffi::c_void,
+            ) = std::mem::transmute(previous);
+            original(this, cmd, scene, contexts);
+        }
+    }
+
     unsafe fn capture_connection_urls(options: *mut std::ffi::c_void) {
         if options.is_null() {
             return;
         }
-        let contexts = msg0(options, c"URLContexts");
+        capture_url_set(msg0(options, c"URLContexts"));
+    }
+
+    unsafe fn capture_url_set(contexts: *mut std::ffi::c_void) {
         if contexts.is_null() {
             return;
         }

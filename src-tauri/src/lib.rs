@@ -28,9 +28,21 @@ pub fn run() {
                     urls.iter().map(|url| url.to_string()).collect::<Vec<_>>(),
                 );
             }
-            #[cfg(target_os = "ios")]
-            if let tauri::RunEvent::Resumed = &event {
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            if let tauri::RunEvent::Opened { .. } = &event {
+                openxlsx::nudge_pending(app.clone());
+            }
+            #[cfg(any(target_os = "ios", target_os = "android"))]
+            if matches!(
+                &event,
+                tauri::RunEvent::Resumed
+                    | tauri::RunEvent::WindowEvent {
+                        event: tauri::WindowEvent::Resumed,
+                        ..
+                    }
+            ) {
                 openxlsx::ingest_inbox(app);
+                openxlsx::nudge_pending(app.clone());
             }
             #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "android")))]
             let _ = (app, event);
