@@ -112,7 +112,15 @@ jobs:
           CODE_SIGNING_REQUIRED: "NO"
         run: |
           python3 -c "from pathlib import Path; p=Path('.github/scripts/package-ios-ipa.sh'); p.write_bytes(p.read_bytes().replace(b'\r\n', b'\n').replace(b'\r', b'\n'))"
-          bash .github/scripts/package-ios-ipa.sh
+          bash .github/scripts/package-ios-ipa.sh 2>&1 | tee ios-build.log
+          exit ${PIPESTATUS[0]}
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build-log
+          path: ios-build.log
+          if-no-files-found: ignore
 
       - uses: actions/upload-artifact@v4
         with:
