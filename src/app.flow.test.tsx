@@ -122,16 +122,16 @@ describe('local roll-call flow', () => {
     expect(within(exportDialog).getByRole('button', {name: /缺/}).getAttribute('aria-pressed')).toBe('false');
     expect(within(exportDialog).getByRole('button', {name: '序号+名字+状态'}).getAttribute('aria-pressed')).toBe('true');
     expect(within(exportDialog).getByRole('button', {name: '模板格式'}).getAttribute('aria-pressed')).toBe('false');
-    expect(within(exportDialog).getByRole('button', {name: 'Markdown'})).toBeTruthy();
-    expect(within(exportDialog).getByRole('button', {name: '图片'})).toBeTruthy();
-    expect(within(exportDialog).getByRole('button', {name: '表格'})).toBeTruthy();
-    await user.click(within(exportDialog).getByRole('button', {name: 'Markdown'}));
-    expect(await screen.findByRole('heading', {name: '保存'})).toBeTruthy();
+    expect(within(exportDialog).getByRole('button', {name: '仅导出选中行'}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(exportDialog).getByRole('button', {name: '导出整表'}).getAttribute('aria-pressed')).toBe('false');
+    await user.click(within(exportDialog).getByRole('button', {name: /未到/}));
+    await user.click(within(exportDialog).getByRole('button', {name: '导出整表'}));
+    await user.click(within(exportDialog).getByRole('button', {name: '显示文字'}));
+    expect(await screen.findByRole('heading', {name: '导出'})).toBeTruthy();
     expect(screen.getByText(/李四/)).toBeTruthy();
     expect(screen.getByText(/张三/)).toBeTruthy();
-    const download = await screen.findByRole('link', {name: '下载'});
-    expect(download.getAttribute('download')).toMatch(/\.md$/);
-    expect(download.getAttribute('href')).toBeTruthy();
+    expect(screen.queryByRole('link', {name: '下载'})).toBeNull();
+    expect(screen.getByRole('button', {name: '复制'})).toBeTruthy();
     await user.click(screen.getByRole('button', {name: '返回'}));
 
     await user.click(screen.getByRole('button', {name: '关闭'}));

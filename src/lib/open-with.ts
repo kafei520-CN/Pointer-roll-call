@@ -82,7 +82,7 @@ export async function setupOpenWith(onFile: OpenHandler): Promise<() => void> {
       .catch(() => undefined);
   };
   pull();
-  const timers = [400, 1200, 3000].map((delay) => window.setTimeout(pull, delay));
+  const timers = [400, 1200, 3000, 8000].map((delay) => window.setTimeout(pull, delay));
   const onVisible = () => {
     if (document.visibilityState === 'visible') {
       pull();

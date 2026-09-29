@@ -43,6 +43,12 @@ button {
   touch-action: manipulation;
 }
 
+.export-text {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

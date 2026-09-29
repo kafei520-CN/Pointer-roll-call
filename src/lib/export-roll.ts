@@ -14,6 +14,9 @@ export const EXPORT_LABEL: Record<Status, string> = {
 
 export type ExportShape = 'brief' | 'template';
 
+/** selected keeps the checked status chips. all exports every person on every sheet. */
+export type ExportScope = 'selected' | 'all';
+
 interface ExportTable {
   sheetName: string;
   headers: string[];
@@ -41,8 +44,9 @@ export function exportTables(
   groups: Status[],
   shape: ExportShape,
   nameLabels: Record<string, string> = {},
+  scope: ExportScope = 'selected',
 ): ExportTable[] {
-  const selected = new Set(groups);
+  const selected = new Set(scope === 'all' ? EXPORT_GROUP_ORDER : groups);
   const tables: ExportTable[] = [];
   for (const sheet of session.sheets) {
     const people: Array<{person: SessionPerson; order: number}> = [];
@@ -113,9 +117,10 @@ export function toMarkdown(
   groups: Status[],
   shape: ExportShape,
   nameLabels: Record<string, string> = {},
+  scope: ExportScope = 'selected',
 ): string {
   const lines = [`# ${session.name}`, ''];
-  for (const table of exportTables(session, groups, shape, nameLabels)) {
+  for (const table of exportTables(session, groups, shape, nameLabels, scope)) {
     lines.push(`## ${table.sheetName}`, '');
     lines.push(`| ${table.headers.map(escapeCell).join(' | ')} |`);
     lines.push(`| ${table.headers.map(() => '---').join(' | ')} |`);
@@ -157,88 +162,6 @@ export function toXlsx(
   return copy;
 }
 
-export function exportFileStem(name: string): string {
-  const cleaned = name.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
-  return cleaned || '点名';
-}
-
-export async function toPngBlob(
-  session: Session,
-  groups: Status[],
-  shape: ExportShape,
-  nameLabels: Record<string, string> = {},
-): Promise<Blob> {
-  const tables = exportTables(session, groups, shape, nameLabels);
-  if (tables.length === 0) {
-    throw new Error('所选状态里没有人');
-  }
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx || typeof canvas.toBlob !== 'function') {
-    throw new Error('无法生成图片');
-  }
-  const width = 750;
-  const pad = 36;
-  const font = '"PingFang SC", "Microsoft YaHei", sans-serif';
-  const rowHeight = 28;
-  const height =
-    32 +
-    28 +
-    16 +
-    tables.reduce((sum, table) => sum + 30 + 22 + table.rows.length * rowHeight + 12, 0);
-  const scale = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.floor(width * scale);
-  canvas.height = Math.floor(height * scale);
-  ctx.setTransform(scale, 0, 0, scale, 0, 0);
-  ctx.fillStyle = '#f4f4f2';
-  ctx.fillRect(0, 0, width, height);
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#111111';
-  ctx.font = `600 28px ${font}`;
-  ctx.fillText(fitText(ctx, session.name, width - pad * 2), pad, 32);
-  let y = 76;
-  for (const table of tables) {
-    const colWidth = (width - pad * 2) / Math.max(table.headers.length, 1);
-    ctx.fillStyle = '#111111';
-    ctx.font = `600 18px ${font}`;
-    ctx.fillText(fitText(ctx, table.sheetName, width - pad * 2), pad, y);
-    y += 30;
-    ctx.fillStyle = '#6b6b6b';
-    ctx.font = `600 14px ${font}`;
-    table.headers.forEach((header, index) => {
-      ctx.fillText(fitText(ctx, header, colWidth - 8), pad + index * colWidth, y);
-    });
-    y += 22;
-    ctx.fillStyle = '#111111';
-    ctx.font = `18px ${font}`;
-    for (const row of table.rows) {
-      row.forEach((cell, index) => {
-        ctx.fillText(fitText(ctx, String(cell), colWidth - 8), pad + index * colWidth, y);
-      });
-      y += rowHeight;
-    }
-    y += 12;
-  }
-  const blob = await new Promise<Blob | null>((resolve) => {
-    canvas.toBlob((result) => resolve(result), 'image/png');
-  });
-  if (!blob) {
-    throw new Error('无法生成图片');
-  }
-  return blob;
-}
-
-function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
-  if (ctx.measureText(text).width <= maxWidth) {
-    return text;
-  }
-  let next = text;
-  while (next.length > 1 && ctx.measureText(`${next}…`).width > maxWidth) {
-    next = next.slice(0, -1);
-  }
-  return `${next}…`;
-}
-
 function uniqueSheetName(name: string, used: Set<string>): string {
   const base = name.replace(/[\\/?*[\]:]/g, ' ').trim().slice(0, 31) || '名单';
   let title = base;
@@ -250,20 +173,4 @@ function uniqueSheetName(name: string, used: Set<string>): string {
   }
   used.add(title);
   return title;
-}
-
-export async function blobHref(blob: Blob): Promise<string> {
-  if (typeof URL.createObjectURL === 'function') {
-    try {
-      return URL.createObjectURL(blob);
-    } catch {
-      // jsdom's object URL cannot read this blob; a data URL still downloads it.
-    }
-  }
-  const bytes = new Uint8Array(await blob.arrayBuffer());
-  let binary = '';
-  for (let index = 0; index < bytes.length; index += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
-  }
-  return `data:${blob.type || 'application/octet-stream'};base64,${btoa(binary)}`;
 }

@@ -14,7 +14,7 @@ import java.io.File
 @TauriPlugin
 class OpenXlsxPlugin(private val activity: Activity) : Plugin(activity) {
     override fun load(webView: WebView) {
-        ingest(activity.intent, emit = false)
+        ingest(activity.intent, emit = true)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -24,15 +24,36 @@ class OpenXlsxPlugin(private val activity: Activity) : Plugin(activity) {
     private fun ingest(intent: Intent?, emit: Boolean) {
         val uri = extractUri(intent) ?: return
         val name = displayName(uri)
-        if (!looksLikeSpreadsheet(name, intent, uri)) {
+        val bytes = readBytes(uri) ?: return
+        if (!looksLikeSpreadsheet(name, intent, uri) && !looksLikeWorkbook(bytes)) {
             return
         }
-        val bytes = readBytes(uri) ?: return
-        val cache = activity.cacheDir
-        File(cache, "pending_xlsx.bin").writeBytes(bytes)
-        File(cache, "pending_xlsx.name").writeText(name)
+        val stored = if (hasSpreadsheetExt(name.lowercase())) name else "$name.xlsx"
+        writePending(bytes, stored)
         if (emit) {
             trigger("xlsxOpened", JSObject())
+        }
+    }
+
+    private fun looksLikeWorkbook(bytes: ByteArray): Boolean {
+        if (bytes.size < 4) {
+            return false
+        }
+        val zip = bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte() && bytes[2] == 0x03.toByte()
+        val ole = bytes[0] == 0xD0.toByte() && bytes[1] == 0xCF.toByte() && bytes[2] == 0x11.toByte()
+        return zip || ole
+    }
+
+    private fun writePending(bytes: ByteArray, name: String) {
+        val dirs = mutableListOf(activity.cacheDir, File(activity.cacheDir, activity.packageName), activity.filesDir)
+        activity.externalCacheDir?.let { dirs.add(it) }
+        for (dir in dirs) {
+            try {
+                dir.mkdirs()
+                File(dir, "pending_xlsx.bin").writeBytes(bytes)
+                File(dir, "pending_xlsx.name").writeText(name)
+            } catch (_: Exception) {
+            }
         }
     }
 

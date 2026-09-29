@@ -1,10 +1,5 @@
-export type ExportKind = 'md' | 'png' | 'xlsx';
-
 export interface ExportHandoff {
-  filename: string;
-  blob: Blob;
   text: string;
-  kind: ExportKind;
   back: string;
 }
 

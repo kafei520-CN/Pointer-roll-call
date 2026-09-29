@@ -55,6 +55,14 @@ describe('roll-call export', () => {
     expect(markdown).not.toContain('002');
   });
 
+  it('exports every person when the scope is the whole sheet', () => {
+    const markdown = toMarkdown(sample(), [], 'brief', {}, 'all');
+    expect(markdown).toContain('| 1 | 张三 | 已到 |');
+    expect(markdown).toContain('| 2 | 李四 | 未到 |');
+    expect(markdown).toContain('| 3 | 王五 | 缺 |');
+    expect(markdown).toContain('| 1 | 赵六 | 未到 |');
+  });
+
   it('writes a brief xlsx with only the chosen rows', () => {
     const book = XLSX.read(toXlsx(sample(), ['present', 'absent'], 'brief'), {type: 'array'});
     expect(book.SheetNames).toEqual(['一班']);

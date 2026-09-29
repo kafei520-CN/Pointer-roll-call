@@ -4,11 +4,9 @@ import {
   EXPORT_GROUP_ORDER,
   EXPORT_LABEL,
   exportCounts,
-  exportFileStem,
   exportTables,
   toMarkdown,
-  toPngBlob,
-  toXlsx,
+  type ExportScope,
   type ExportShape,
 } from '../lib/export-roll';
 import {stageExport} from '../lib/export-handoff';
@@ -31,8 +29,8 @@ export function SessionView({id}: {id: string}) {
   const [exportOpen, setExportOpen] = useState(false);
   const [exportGroups, setExportGroups] = useState<Status[]>([]);
   const [exportShape, setExportShape] = useState<ExportShape>('brief');
+  const [exportScope, setExportScope] = useState<ExportScope>('selected');
   const [exportError, setExportError] = useState('');
-  const [exporting, setExporting] = useState(false);
   const swipeSheets = useHorizontalSwipe((direction) => {
     if (!session) {
       return;
@@ -99,52 +97,25 @@ export function SessionView({id}: {id: string}) {
     const counts = exportCounts(current);
     setExportGroups(EXPORT_GROUP_ORDER.filter((status) => counts[status] > 0));
     setExportShape('brief');
+    setExportScope('selected');
     setExportError('');
     setExportOpen(true);
   }
 
-  async function runExport(format: 'md' | 'png' | 'xlsx') {
+  function showMarkdown() {
     const labels = sheetNameLabels(roll);
-    if (exportTables(roll, exportGroups, exportShape, labels).length === 0) {
-      setExportError('所选状态里没有人');
+    const tables = exportTables(roll, exportGroups, exportShape, labels, exportScope);
+    if (tables.length === 0) {
+      setExportError(exportScope === 'all' ? '表里没有人' : '所选状态里没有人');
       return;
     }
-    const stem = exportFileStem(roll.name);
-    const back = `/session/${roll.id}`;
-    setExporting(true);
+    stageExport({
+      text: toMarkdown(roll, exportGroups, exportShape, labels, exportScope),
+      back: `/session/${roll.id}`,
+    });
     setExportError('');
-    try {
-      if (format === 'md') {
-        const text = toMarkdown(roll, exportGroups, exportShape, labels);
-        stageExport({
-          filename: `${stem}.md`,
-          blob: new Blob([text], {type: 'text/markdown;charset=utf-8'}),
-          text,
-          kind: 'md',
-          back,
-        });
-      } else if (format === 'png') {
-        const png = await toPngBlob(roll, exportGroups, exportShape, labels);
-        stageExport({filename: `${stem}.png`, blob: png, text: '', kind: 'png', back});
-      } else {
-        const bytes = toXlsx(roll, exportGroups, exportShape, labels);
-        stageExport({
-          filename: `${stem}.xlsx`,
-          blob: new Blob([bytes], {
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          }),
-          text: '',
-          kind: 'xlsx',
-          back,
-        });
-      }
-      setExportOpen(false);
-      go('/export');
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : '导出失败');
-    } finally {
-      setExporting(false);
-    }
+    setExportOpen(false);
+    go('/export');
   }
 
   return (
@@ -230,33 +201,66 @@ export function SessionView({id}: {id: string}) {
       </main>
       <SheetTabs names={session.sheets} active={sheet.id} onChange={setSheetId} />
       <Modal open={exportOpen} title="导出" onClose={() => setExportOpen(false)}>
-        <p className="text-xs text-mute">只导出勾选的人。未到是所有还没点到的人，包含每张工作表。</p>
+        <p className="text-xs text-mute">导出后直接显示文字，长按即可复制。</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {EXPORT_GROUP_ORDER.map((status) => {
-            const on = exportGroups.includes(status);
-            const count = exportCounts(session)[status];
-            return (
-              <button
-                key={status}
-                type="button"
-                aria-pressed={on}
-                onClick={() =>
-                  setExportGroups((current) =>
-                    current.includes(status)
-                      ? current.filter((item) => item !== status)
-                      : [...current, status],
-                  )
-                }
-                className={cx(
-                  'h-9 rounded-full px-3 text-xs',
-                  on ? 'bg-ink text-white' : 'bg-soft text-ink',
-                )}
-              >
-                {EXPORT_LABEL[status]} {count}
-              </button>
-            );
-          })}
+          <button
+            type="button"
+            aria-pressed={exportScope === 'selected'}
+            onClick={() => setExportScope('selected')}
+            className={cx(
+              'h-9 rounded-full px-3 text-xs',
+              exportScope === 'selected' ? 'bg-ink text-white' : 'bg-soft text-ink',
+            )}
+          >
+            仅导出选中行
+          </button>
+          <button
+            type="button"
+            aria-pressed={exportScope === 'all'}
+            onClick={() => setExportScope('all')}
+            className={cx(
+              'h-9 rounded-full px-3 text-xs',
+              exportScope === 'all' ? 'bg-ink text-white' : 'bg-soft text-ink',
+            )}
+          >
+            导出整表
+          </button>
         </div>
+        {exportScope === 'selected' ? (
+          <>
+            <p className="mb-2 mt-4 text-xs text-mute">
+              只导出勾选的分类。未到是所有还没点到的人，包含每张工作表。
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {EXPORT_GROUP_ORDER.map((status) => {
+                const on = exportGroups.includes(status);
+                const count = exportCounts(session)[status];
+                return (
+                  <button
+                    key={status}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() =>
+                      setExportGroups((current) =>
+                        current.includes(status)
+                          ? current.filter((item) => item !== status)
+                          : [...current, status],
+                      )
+                    }
+                    className={cx(
+                      'h-9 rounded-full px-3 text-xs',
+                      on ? 'bg-ink text-white' : 'bg-soft text-ink',
+                    )}
+                  >
+                    {EXPORT_LABEL[status]} {count}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 text-xs text-mute">每张工作表的所有人都导出，不按分类筛选。</p>
+        )}
         <p className="mb-2 mt-4 text-xs text-mute">列</p>
         <div className="flex flex-wrap gap-2">
           <button
@@ -282,18 +286,13 @@ export function SessionView({id}: {id: string}) {
             序号+名字+状态
           </button>
         </div>
-        <p className="mb-2 mt-4 text-xs text-mute">格式</p>
-        <div className="grid grid-cols-3 gap-2">
-          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('md')}>
-            Markdown
-          </Button>
-          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('png')}>
-            图片
-          </Button>
-          <Button variant="soft" disabled={exporting || exportGroups.length === 0} onClick={() => void runExport('xlsx')}>
-            表格
-          </Button>
-        </div>
+        <Button
+          className="mt-4 w-full"
+          disabled={exportScope === 'selected' && exportGroups.length === 0}
+          onClick={showMarkdown}
+        >
+          显示文字
+        </Button>
         {exportError ? <p className="mt-3 text-sm">{exportError}</p> : null}
       </Modal>
       <Modal open={closeOpen} title="关闭点名" onClose={() => setCloseOpen(false)}>
