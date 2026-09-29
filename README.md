@@ -69,7 +69,7 @@ npm run tauri ios dev
 - Android：`ubuntu-latest`，ARM64 debug APK，产物名 `android-apk`
 - iOS：`macos-latest`，未签名 release IPA，产物名 `ios-ipa`
 
-iOS 包没有签名，交给企业签或爱思重签后再安装。Android 是 ARM64 debug APK。
+iOS 包没有签名，安装包名是 `zhizhen-dianming`，桌面名称仍是「指针点名」。交给企业签或爱思重签后再安装。Android 是 ARM64 debug APK。
 
 ## 测试
 

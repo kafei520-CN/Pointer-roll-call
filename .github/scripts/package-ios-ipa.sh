@@ -137,6 +137,30 @@ if [[ "$exe_size" -lt 1000000 ]]; then
   exit 1
 fi
 
+# Enterprise signers unpack the IPA with a zip tool that corrupts non-ASCII
+# filenames. The signed executable then no longer matches CFBundleExecutable,
+# and iOS kills the app on launch. Keep the icon label, use an ASCII bundle.
+ascii_name="zhizhen-dianming"
+display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist" 2>/dev/null || true)"
+if [[ -z "$display_name" ]]; then
+  display_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Info.plist")"
+fi
+if [[ "$exe" != "$ascii_name" ]]; then
+  mv "$app/$exe" "$app/$ascii_name"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $ascii_name" "$app/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleName $ascii_name" "$app/Info.plist"
+  if /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Info.plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $display_name" "$app/Info.plist"
+  else
+    /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string $display_name" "$app/Info.plist"
+  fi
+  renamed="$(dirname "$app")/$ascii_name.app"
+  rm -rf "$renamed"
+  mv "$app" "$renamed"
+  app="$renamed"
+fi
+echo "packed bundle $(basename "$app") executable $ascii_name label $display_name"
+
 mkdir -p "$apple_dir/build"
 work="$(mktemp -d)"
 mkdir -p "$work/Payload"
