@@ -120,6 +120,8 @@ describe('local roll-call flow', () => {
     expect(within(exportDialog).getByRole('button', {name: /已到/}).getAttribute('aria-pressed')).toBe('true');
     expect(within(exportDialog).getByRole('button', {name: /未到/}).getAttribute('aria-pressed')).toBe('true');
     expect(within(exportDialog).getByRole('button', {name: /缺/}).getAttribute('aria-pressed')).toBe('false');
+    expect(within(exportDialog).getByRole('button', {name: '序号+名字+状态'}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(exportDialog).getByRole('button', {name: '模板格式'}).getAttribute('aria-pressed')).toBe('false');
     expect(within(exportDialog).getByRole('button', {name: 'Markdown'})).toBeTruthy();
     expect(within(exportDialog).getByRole('button', {name: '图片'})).toBeTruthy();
     expect(within(exportDialog).getByRole('button', {name: '表格'})).toBeTruthy();

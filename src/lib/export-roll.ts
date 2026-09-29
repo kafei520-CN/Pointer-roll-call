@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import type {Session, SessionSheet, Status} from '../types';
+import type {Session, SessionPerson, SessionSheet, Status} from '../types';
 
 /** 未到 is every person still unmarked, on every sheet of this roll call. */
 export const EXPORT_GROUP_ORDER: Status[] = ['present', 'absent', 'leave', 'late', 'unset'];
@@ -12,21 +12,12 @@ export const EXPORT_LABEL: Record<Status, string> = {
   unset: '未到',
 };
 
-export interface ExportLine {
-  order: number;
-  name: string;
-  extra: string;
-}
+export type ExportShape = 'brief' | 'template';
 
-export interface ExportGroupBlock {
-  status: Status;
-  label: string;
-  people: ExportLine[];
-}
-
-export interface ExportSection {
+interface ExportTable {
   sheetName: string;
-  groups: ExportGroupBlock[];
+  headers: string[];
+  rows: Array<Array<string | number>>;
 }
 
 export function exportCounts(session: Session): Record<Status, number> {
@@ -45,88 +36,119 @@ export function exportCounts(session: Session): Record<Status, number> {
   return counts;
 }
 
-export function exportSections(session: Session, groups: Status[]): ExportSection[] {
+export function exportTables(
+  session: Session,
+  groups: Status[],
+  shape: ExportShape,
+  nameLabels: Record<string, string> = {},
+): ExportTable[] {
   const selected = new Set(groups);
-  const sections: ExportSection[] = [];
+  const tables: ExportTable[] = [];
   for (const sheet of session.sheets) {
-    const blocks: ExportGroupBlock[] = [];
-    for (const status of EXPORT_GROUP_ORDER) {
-      if (!selected.has(status)) {
-        continue;
+    const people: Array<{person: SessionPerson; order: number}> = [];
+    sheet.people.forEach((person, index) => {
+      if (selected.has(person.status)) {
+        people.push({person, order: index + 1});
       }
-      const people: ExportLine[] = [];
-      sheet.people.forEach((person, index) => {
-        if (person.status !== status) {
-          return;
-        }
-        people.push({
-          order: index + 1,
-          name: person.name,
-          extra: extraText(sheet, person.fields),
-        });
-      });
-      if (people.length > 0) {
-        blocks.push({status, label: EXPORT_LABEL[status], people});
-      }
+    });
+    if (people.length === 0) {
+      continue;
     }
-    if (blocks.length > 0) {
-      sections.push({sheetName: sheet.name, groups: blocks});
+    if (shape === 'brief') {
+      tables.push({
+        sheetName: sheet.name,
+        headers: ['序号', '名字', '状态'],
+        rows: people.map(({person, order}) => [order, person.name, EXPORT_LABEL[person.status]]),
+      });
+      continue;
+    }
+    const cells = templateCells(sheet, nameLabels[sheet.id] || '姓名');
+    tables.push({
+      sheetName: sheet.name,
+      headers: cells.map((cell) => cell.label),
+      rows: people.map(({person}) => cells.map((cell) => cell.value(person))),
+    });
+  }
+  return tables;
+}
+
+function templateCells(
+  sheet: SessionSheet,
+  nameLabel: string,
+): Array<{label: string; value: (person: SessionPerson) => string}> {
+  const indexed = sheet.columns.map((column) => {
+    const match = /^c(\d+)$/.exec(column.key);
+    return match ? {index: Number(match[1]), column} : null;
+  });
+  if (indexed.some((item) => item === null)) {
+    return [
+      {label: nameLabel, value: (person) => person.name},
+      ...sheet.columns.map((column) => ({
+        label: column.label,
+        value: (person: SessionPerson) => person.fields[column.key] ?? '',
+      })),
+    ];
+  }
+  const used = new Set(indexed.map((item) => item!.index));
+  const max = indexed.reduce((highest, item) => Math.max(highest, item!.index), -1);
+  let nameIndex = 0;
+  for (let index = 0; index <= max + 1; index += 1) {
+    if (!used.has(index)) {
+      nameIndex = index;
+      break;
     }
   }
-  return sections;
+  const cells = indexed.map((item) => ({
+    index: item!.index,
+    label: item!.column.label,
+    value: (person: SessionPerson) => person.fields[item!.column.key] ?? '',
+  }));
+  cells.push({index: nameIndex, label: nameLabel, value: (person) => person.name});
+  cells.sort((a, b) => a.index - b.index);
+  return cells;
 }
 
-function extraText(sheet: SessionSheet, fields: Record<string, string>): string {
-  return sheet.columns
-    .map((column) => fields[column.key])
-    .filter((value) => value && value.trim())
-    .join(' · ');
-}
-
-export function toMarkdown(session: Session, groups: Status[]): string {
+export function toMarkdown(
+  session: Session,
+  groups: Status[],
+  shape: ExportShape,
+  nameLabels: Record<string, string> = {},
+): string {
   const lines = [`# ${session.name}`, ''];
-  for (const section of exportSections(session, groups)) {
-    lines.push(`## ${section.sheetName}`, '');
-    for (const group of section.groups) {
-      lines.push(`### ${group.label}（${group.people.length}）`, '');
-      for (const person of group.people) {
-        lines.push(`${person.order}. ${person.name}`);
-        if (person.extra) {
-          lines.push(`   ${person.extra}`);
-        }
-      }
-      lines.push('');
+  for (const table of exportTables(session, groups, shape, nameLabels)) {
+    lines.push(`## ${table.sheetName}`, '');
+    lines.push(`| ${table.headers.map(escapeCell).join(' | ')} |`);
+    lines.push(`| ${table.headers.map(() => '---').join(' | ')} |`);
+    for (const row of table.rows) {
+      lines.push(`| ${row.map((cell) => escapeCell(String(cell))).join(' | ')} |`);
     }
+    lines.push('');
   }
   return `${lines.join('\n').trim()}\n`;
 }
 
-export function toXlsx(session: Session, groups: Status[]): ArrayBuffer {
-  const selected = new Set(groups);
+function escapeCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+}
+
+export function toXlsx(
+  session: Session,
+  groups: Status[],
+  shape: ExportShape,
+  nameLabels: Record<string, string> = {},
+): ArrayBuffer {
+  const tables = exportTables(session, groups, shape, nameLabels);
+  if (tables.length === 0) {
+    throw new Error('所选状态里没有人');
+  }
   const book = XLSX.utils.book_new();
   const used = new Set<string>();
-  for (const sheet of session.sheets) {
-    const rows: Array<Array<string | number>> = [
-      ['序号', '姓名', '状态', ...sheet.columns.map((column) => column.label)],
-    ];
-    sheet.people.forEach((person, index) => {
-      if (!selected.has(person.status)) {
-        return;
-      }
-      rows.push([
-        index + 1,
-        person.name,
-        EXPORT_LABEL[person.status],
-        ...sheet.columns.map((column) => person.fields[column.key] ?? ''),
-      ]);
-    });
-    if (rows.length === 1) {
-      continue;
-    }
-    XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(rows), uniqueSheetName(sheet.name, used));
-  }
-  if (book.SheetNames.length === 0) {
-    throw new Error('所选状态里没有人');
+  for (const table of tables) {
+    XLSX.utils.book_append_sheet(
+      book,
+      XLSX.utils.aoa_to_sheet([table.headers, ...table.rows]),
+      uniqueSheetName(table.sheetName, used),
+    );
   }
   const written = XLSX.write(book, {type: 'array', bookType: 'xlsx'}) as ArrayBuffer | Uint8Array;
   const view = written instanceof Uint8Array ? written : new Uint8Array(written);
@@ -140,9 +162,14 @@ export function exportFileStem(name: string): string {
   return cleaned || '点名';
 }
 
-export async function toPngBlob(session: Session, groups: Status[]): Promise<Blob> {
-  const sections = exportSections(session, groups);
-  if (sections.length === 0) {
+export async function toPngBlob(
+  session: Session,
+  groups: Status[],
+  shape: ExportShape,
+  nameLabels: Record<string, string> = {},
+): Promise<Blob> {
+  const tables = exportTables(session, groups, shape, nameLabels);
+  if (tables.length === 0) {
     throw new Error('所选状态里没有人');
   }
   const canvas = document.createElement('canvas');
@@ -152,36 +179,13 @@ export async function toPngBlob(session: Session, groups: Status[]): Promise<Blo
   }
   const width = 750;
   const pad = 36;
-  const maxText = width - pad * 2;
   const font = '"PingFang SC", "Microsoft YaHei", sans-serif';
-  const blocks: Array<{text: string; size: number; color: string; gap: number; bold: boolean}> = [
-    {text: session.name, size: 28, color: '#111111', gap: 22, bold: true},
-  ];
-  for (const section of sections) {
-    blocks.push({text: section.sheetName, size: 18, color: '#111111', gap: 12, bold: true});
-    for (const group of section.groups) {
-      blocks.push({
-        text: `${group.label} ${group.people.length}`,
-        size: 15,
-        color: '#6b6b6b',
-        gap: 8,
-        bold: true,
-      });
-      for (const person of group.people) {
-        blocks.push({
-          text: `${person.order}  ${person.name}`,
-          size: 18,
-          color: '#111111',
-          gap: person.extra ? 4 : 12,
-          bold: false,
-        });
-        if (person.extra) {
-          blocks.push({text: person.extra, size: 13, color: '#6b6b6b', gap: 12, bold: false});
-        }
-      }
-    }
-  }
-  const height = 40 + blocks.reduce((sum, block) => sum + block.size + block.gap, 0) + 16;
+  const rowHeight = 28;
+  const height =
+    32 +
+    28 +
+    16 +
+    tables.reduce((sum, table) => sum + 30 + 22 + table.rows.length * rowHeight + 12, 0);
   const scale = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.floor(width * scale);
   canvas.height = Math.floor(height * scale);
@@ -189,12 +193,31 @@ export async function toPngBlob(session: Session, groups: Status[]): Promise<Blo
   ctx.fillStyle = '#f4f4f2';
   ctx.fillRect(0, 0, width, height);
   ctx.textBaseline = 'top';
-  let y = 32;
-  for (const block of blocks) {
-    ctx.font = `${block.bold ? '600 ' : ''}${block.size}px ${font}`;
-    ctx.fillStyle = block.color;
-    ctx.fillText(fitText(ctx, block.text, maxText), pad, y);
-    y += block.size + block.gap;
+  ctx.fillStyle = '#111111';
+  ctx.font = `600 28px ${font}`;
+  ctx.fillText(fitText(ctx, session.name, width - pad * 2), pad, 32);
+  let y = 76;
+  for (const table of tables) {
+    const colWidth = (width - pad * 2) / Math.max(table.headers.length, 1);
+    ctx.fillStyle = '#111111';
+    ctx.font = `600 18px ${font}`;
+    ctx.fillText(fitText(ctx, table.sheetName, width - pad * 2), pad, y);
+    y += 30;
+    ctx.fillStyle = '#6b6b6b';
+    ctx.font = `600 14px ${font}`;
+    table.headers.forEach((header, index) => {
+      ctx.fillText(fitText(ctx, header, colWidth - 8), pad + index * colWidth, y);
+    });
+    y += 22;
+    ctx.fillStyle = '#111111';
+    ctx.font = `18px ${font}`;
+    for (const row of table.rows) {
+      row.forEach((cell, index) => {
+        ctx.fillText(fitText(ctx, String(cell), colWidth - 8), pad + index * colWidth, y);
+      });
+      y += rowHeight;
+    }
+    y += 12;
   }
   const blob = await new Promise<Blob | null>((resolve) => {
     canvas.toBlob((result) => resolve(result), 'image/png');

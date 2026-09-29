@@ -5,11 +5,12 @@ import {
   EXPORT_LABEL,
   exportCounts,
   exportFileStem,
-  exportSections,
+  exportTables,
   saveBlob,
   toMarkdown,
   toPngBlob,
   toXlsx,
+  type ExportShape,
 } from '../lib/export-roll';
 import {closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {matchesQuery} from '../lib/search';
@@ -29,6 +30,7 @@ export function SessionView({id}: {id: string}) {
   const [closeOpen, setCloseOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportGroups, setExportGroups] = useState<Status[]>([]);
+  const [exportShape, setExportShape] = useState<ExportShape>('brief');
   const [exportError, setExportError] = useState('');
   const [exporting, setExporting] = useState(false);
   const swipeSheets = useHorizontalSwipe((direction) => {
@@ -83,15 +85,27 @@ export function SessionView({id}: {id: string}) {
     go('/');
   }
 
+  function sheetNameLabels(current: Session): Record<string, string> {
+    const template = app.templates.find((item) => item.id === current.templateId);
+    const labels: Record<string, string> = {};
+    for (const item of current.sheets) {
+      const match = template?.sheets.find((sheetItem) => sheetItem.name === item.name);
+      labels[item.id] = match?.nameColumnLabel || '姓名';
+    }
+    return labels;
+  }
+
   function openExport(current: Session) {
     const counts = exportCounts(current);
     setExportGroups(EXPORT_GROUP_ORDER.filter((status) => counts[status] > 0));
+    setExportShape('brief');
     setExportError('');
     setExportOpen(true);
   }
 
   async function runExport(format: 'md' | 'png' | 'xlsx') {
-    if (exportSections(roll, exportGroups).length === 0) {
+    const labels = sheetNameLabels(roll);
+    if (exportTables(roll, exportGroups, exportShape, labels).length === 0) {
       setExportError('所选状态里没有人');
       return;
     }
@@ -100,7 +114,7 @@ export function SessionView({id}: {id: string}) {
     setExportError('');
     try {
       if (format === 'md') {
-        const text = toMarkdown(roll, exportGroups);
+        const text = toMarkdown(roll, exportGroups, exportShape, labels);
         const result = await saveBlob(
           `${stem}.md`,
           new Blob([text], {type: 'text/markdown;charset=utf-8'}),
@@ -109,13 +123,13 @@ export function SessionView({id}: {id: string}) {
           setExportOpen(false);
         }
       } else if (format === 'png') {
-        const png = await toPngBlob(roll, exportGroups);
+        const png = await toPngBlob(roll, exportGroups, exportShape, labels);
         const result = await saveBlob(`${stem}.png`, png);
         if (result !== 'cancelled') {
           setExportOpen(false);
         }
       } else {
-        const bytes = toXlsx(roll, exportGroups);
+        const bytes = toXlsx(roll, exportGroups, exportShape, labels);
         const result = await saveBlob(
           `${stem}.xlsx`,
           new Blob([bytes], {
@@ -216,7 +230,7 @@ export function SessionView({id}: {id: string}) {
       </main>
       <SheetTabs names={session.sheets} active={sheet.id} onChange={setSheetId} />
       <Modal open={exportOpen} title="导出" onClose={() => setExportOpen(false)}>
-        <p className="text-xs text-mute">选择人员。未到是所有还没点到的人，包含每张工作表。</p>
+        <p className="text-xs text-mute">只导出勾选的人。未到是所有还没点到的人，包含每张工作表。</p>
         <div className="mt-3 flex flex-wrap gap-2">
           {EXPORT_GROUP_ORDER.map((status) => {
             const on = exportGroups.includes(status);
@@ -242,6 +256,31 @@ export function SessionView({id}: {id: string}) {
               </button>
             );
           })}
+        </div>
+        <p className="mb-2 mt-4 text-xs text-mute">列</p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            aria-pressed={exportShape === 'template'}
+            onClick={() => setExportShape('template')}
+            className={cx(
+              'h-9 rounded-full px-3 text-xs',
+              exportShape === 'template' ? 'bg-ink text-white' : 'bg-soft text-ink',
+            )}
+          >
+            模板格式
+          </button>
+          <button
+            type="button"
+            aria-pressed={exportShape === 'brief'}
+            onClick={() => setExportShape('brief')}
+            className={cx(
+              'h-9 rounded-full px-3 text-xs',
+              exportShape === 'brief' ? 'bg-ink text-white' : 'bg-soft text-ink',
+            )}
+          >
+            序号+名字+状态
+          </button>
         </div>
         <p className="mb-2 mt-4 text-xs text-mute">格式</p>
         <div className="grid grid-cols-3 gap-2">
