@@ -10,7 +10,7 @@ import {
   parseWorkbook,
 } from '../lib/xlsx';
 import {go} from '../router';
-import type {CountMode, RawWorkbook, SheetImportConfig, SheetKind} from '../types';
+import type {CountMode, RawWorkbook, SelectMode, SheetImportConfig, SheetKind} from '../types';
 import {Button, Segmented, Shell, TextField, TopBar, cx} from '../ui';
 
 export function ImportWizard() {
@@ -87,6 +87,10 @@ export function ImportWizard() {
 
   function setImportCountMode(countMode: CountMode) {
     setConfigs((current) => current.map((item) => ({...item, countMode})));
+  }
+
+  function setImportSelectMode(selectMode: SelectMode) {
+    setConfigs((current) => current.map((item) => ({...item, selectMode})));
   }
 
   async function finish() {
@@ -181,7 +185,19 @@ export function ImportWizard() {
                 </div>
               ) : null}
               {config.kind === 'custom' ? (
-                <p className="mt-2 text-xs text-mute">人员从表格导入。选项在进入编辑后添加。</p>
+                <div className="mt-3">
+                  <Segmented
+                    value={config.selectMode ?? 'single'}
+                    onChange={setImportSelectMode}
+                    options={[
+                      {value: 'single', label: '单选'},
+                      {value: 'multi', label: '多选'},
+                    ]}
+                  />
+                  <p className="mt-2 text-xs text-mute">
+                    人员从表格导入。选项在进入编辑后添加。点一下选中，再点一下取消。
+                  </p>
+                </div>
               ) : null}
               {(config.kind ?? 'roll') === 'roll' ? (
                 <p className="mt-2 text-xs text-mute">导入后按到、缺、假、迟点名。这个选择会用到每个要导入的工作表。</p>

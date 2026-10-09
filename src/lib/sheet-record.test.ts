@@ -4,11 +4,13 @@ import {
   addSequenceSlot,
   addTally,
   appendMark,
+  applyOption,
   deleteSequenceNumber,
   dropLastMark,
   formatSequence,
   formatTally,
   nextChoice,
+  personChoices,
   personMarked,
   sequenceNumbers,
   toggleOwnMark,
@@ -50,8 +52,8 @@ describe('count sheet records', () => {
     const cleared = toggleOwnMark(people, 'a', 1);
     expect(cleared[0].marks).toEqual([]);
     expect(cleared[1].marks).toEqual([1]);
-    const selected = toggleOwnMark(cleared, 'a', 2);
-    expect(selected[0].marks).toEqual([2]);
+    const selected = toggleOwnMark(toggleOwnMark(cleared, 'a', 2), 'a', 3);
+    expect(selected[0].marks).toEqual([2, 3]);
     expect(selected[1].marks).toEqual([1]);
   });
 
@@ -70,6 +72,17 @@ describe('count sheet records', () => {
     expect(formatTally(addTally(person('a'), -1))).toBe('');
     expect(personMarked(thrice, {kind: 'count', countMode: 'tally'})).toBe(true);
     expect(personMarked(person('a'), {kind: 'count', countMode: 'tally'})).toBe(false);
+  });
+
+  it('toggles custom options independently in multi-select', () => {
+    const start = person('a');
+    const first = applyOption(start, 'good', 'multi');
+    const both = applyOption(first, 'ok', 'multi');
+    expect(personChoices(both)).toEqual(['good', 'ok']);
+    const dropped = applyOption(both, 'good', 'multi');
+    expect(personChoices(dropped)).toEqual(['ok']);
+    const single = applyOption(applyOption(start, 'good', 'single'), 'good', 'single');
+    expect(personChoices(single)).toEqual([]);
   });
 
   it('cycles custom options and treats an empty choice as unmarked', () => {

@@ -12,6 +12,11 @@ export const COUNT_MODES = ['sequence', 'tally'] as const;
 
 export type CountMode = (typeof COUNT_MODES)[number];
 
+/** single 只能选一个选项。multi 可以同时选多个。再点一次取消。 */
+export const SELECT_MODES = ['single', 'multi'] as const;
+
+export type SelectMode = (typeof SELECT_MODES)[number];
+
 export interface SheetOption {
   id: string;
   label: string;
@@ -47,6 +52,7 @@ export interface TemplateSheet {
   /** 缺省视为点名表，旧模板不用迁移。 */
   kind?: SheetKind;
   countMode?: CountMode;
+  selectMode?: SelectMode;
   options?: SheetOption[];
 }
 
@@ -68,8 +74,10 @@ export interface SessionPerson extends Person {
   marks?: number[];
   /** 计数表次数。 */
   count?: number;
-  /** 自定义表当前选项 id。空字符串表示未选。 */
+  /** 自定义表单选的选项 id。空字符串表示未选。 */
   choice?: string;
+  /** 自定义表多选的选项 id。 */
+  choices?: string[];
 }
 
 export interface SessionSheet {
@@ -80,6 +88,7 @@ export interface SessionSheet {
   kind?: SheetKind;
   countMode?: CountMode;
   options?: SheetOption[];
+  selectMode?: SelectMode;
   /** 数列里可点的序号。缺省时从已选数字推导。新加的数字先放这里，默认无人选中。 */
   sequence?: number[];
 }
@@ -114,4 +123,5 @@ export interface SheetImportConfig {
   nameCol: number;
   kind?: SheetKind;
   countMode?: CountMode;
+  selectMode?: SelectMode;
 }

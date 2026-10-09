@@ -1,5 +1,6 @@
 import type {
   CountMode,
+  SelectMode,
   Session,
   SessionPerson,
   SessionSheet,
@@ -27,6 +28,36 @@ export function personChoice(person: SessionPerson): string {
   return person.choice ?? '';
 }
 
+export function selectMode(sheet: {selectMode?: SelectMode}): SelectMode {
+  return sheet.selectMode ?? 'single';
+}
+
+export function personChoices(person: SessionPerson): string[] {
+  if (person.choices?.length) {
+    return person.choices;
+  }
+  return person.choice ? [person.choice] : [];
+}
+
+export function applyOption(person: SessionPerson, optionId: string, mode: SelectMode): SessionPerson {
+  if (!optionId) {
+    return {...person, choice: '', choices: []};
+  }
+  if (mode === 'multi') {
+    const current = person.choices ?? [];
+    const choices = current.includes(optionId)
+      ? current.filter((item) => item !== optionId)
+      : [...current, optionId];
+    return {...person, choice: '', choices, markedAt: Date.now()};
+  }
+  return {
+    ...person,
+    choice: person.choice === optionId ? '' : optionId,
+    choices: [],
+    markedAt: Date.now(),
+  };
+}
+
 export function countValue(person: SessionPerson, mode: CountMode): number {
   return mode === 'sequence' ? personMarks(person).length : personCount(person);
 }
@@ -40,7 +71,7 @@ export function personMarked(
     return countValue(person, countMode(sheet)) > 0;
   }
   if (kind === 'custom') {
-    return personChoice(person) !== '';
+    return personChoices(person).length > 0;
   }
   return person.status !== 'unset';
 }
@@ -142,6 +173,13 @@ export function optionLabel(options: SheetOption[] | undefined, choice: string):
     return '';
   }
   return options?.find((item) => item.id === choice)?.label ?? '';
+}
+
+export function optionLabels(options: SheetOption[] | undefined, ids: string[]): string {
+  return ids
+    .map((id) => optionLabel(options, id))
+    .filter(Boolean)
+    .join('、');
 }
 
 export function nextChoice(choice: string, options: SheetOption[]): string {

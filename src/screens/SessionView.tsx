@@ -16,9 +16,10 @@ import {
   countValue,
   markedTotals,
   nextChoice,
-  optionLabel,
-  personChoice,
+  optionLabels,
+  personChoices,
   personMarked,
+  selectMode,
   personMarks,
   recordSummary,
   sheetKind,
@@ -195,7 +196,7 @@ export function SessionView({id}: {id: string}) {
         {sheetKind(sheet) === 'count' ? (
           <p className="text-xs text-mute">
             {countMode(sheet) === 'sequence'
-              ? '点加号增加一个未选中的序号。点一下只选中自己，再点取消。长按或减号才从数列里删除。'
+              ? '可多选。点加号增加未选中的序号，点数字只选中或取消自己。减号删除数列里的最后一个。'
               : '点一下加 1 次。数字就是次数。'}
           </p>
         ) : null}
@@ -381,8 +382,8 @@ function PersonCard({
                 onCount(1);
                 return;
               }
-              if (kind === 'custom') {
-                onChoice(nextChoice(personChoice(person), sheet.options ?? []));
+              if (kind === 'custom' && selectMode(sheet) === 'single') {
+                onChoice(nextChoice(personChoices(person)[0] ?? '', sheet.options ?? []));
                 return;
               }
               onStatus(cycle(person.status));
@@ -445,19 +446,23 @@ function PersonCard({
           <p className="mt-3 text-xs text-mute">还没有选项。回到模板里添加。</p>
         ) : (
           <div className="mt-3 flex flex-wrap gap-1">
-            {(sheet.options ?? []).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                onClick={() => onChoice(personChoice(person) === option.id ? '' : option.id)}
-                className={cx(
-                  'h-10 rounded-2xl px-3 text-sm',
-                  personChoice(person) === option.id ? 'bg-ink text-white' : 'bg-soft text-ink',
-                )}
-              >
-                {option.label}
-              </button>
-            ))}
+            {(sheet.options ?? []).map((option) => {
+              const on = personChoices(person).includes(option.id);
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => onChoice(option.id)}
+                  className={cx(
+                    'h-10 rounded-2xl px-3 text-sm',
+                    on ? 'bg-ink text-white' : 'bg-soft text-ink',
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
           </div>
         )
       ) : null}
@@ -479,20 +484,17 @@ function SequenceRow({
   onAdd: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
-  const holdTimer = useRef(0);
-  const holdFired = useRef(false);
   useEffect(() => {
     const node = scroller.current;
     if (node) {
       node.scrollLeft = node.scrollWidth;
     }
   }, [numbers.length]);
-  useEffect(() => () => window.clearTimeout(holdTimer.current), []);
   const chosen = new Set(selected);
   const last = numbers[numbers.length - 1];
   return (
     <div className="mt-3 flex items-center gap-1">
-      <div ref={scroller} className="flex w-[10.75rem] gap-1 overflow-x-auto">
+      <div ref={scroller} className="flex min-w-0 flex-1 gap-1 overflow-x-auto">
         {numbers.map((mark) => {
           const on = chosen.has(mark);
           return (
@@ -500,25 +502,7 @@ function SequenceRow({
               key={mark}
               type="button"
               aria-pressed={on}
-              onPointerDown={() => {
-                holdFired.current = false;
-                window.clearTimeout(holdTimer.current);
-                holdTimer.current = window.setTimeout(() => {
-                  holdFired.current = true;
-                  onDelete(mark);
-                }, 450);
-              }}
-              onPointerUp={() => window.clearTimeout(holdTimer.current)}
-              onPointerLeave={() => window.clearTimeout(holdTimer.current)}
-              onPointerCancel={() => window.clearTimeout(holdTimer.current)}
-              onContextMenu={(event) => event.preventDefault()}
-              onClick={() => {
-                if (holdFired.current) {
-                  holdFired.current = false;
-                  return;
-                }
-                onToggle(mark);
-              }}
+              onClick={() => onToggle(mark)}
               className={cx(
                 'h-10 w-10 shrink-0 rounded-2xl text-sm',
                 on ? 'bg-ink text-white' : 'bg-soft text-ink',
@@ -565,9 +549,9 @@ function RecordBadge({person, sheet}: {person: SessionPerson; sheet: SessionShee
     );
   }
   if (kind === 'custom') {
-    const label = optionLabel(sheet.options, personChoice(person));
+    const label = optionLabels(sheet.options, personChoices(person));
     return (
-      <span className={cx('rounded-full px-2 py-1 text-xs', label ? 'bg-ink text-white' : 'bg-soft text-mute')}>
+      <span className={cx('max-w-28 truncate rounded-full px-2 py-1 text-xs', label ? 'bg-ink text-white' : 'bg-soft text-mute')}>
         {label || '未选'}
       </span>
     );
@@ -605,14 +589,14 @@ function FilterRow({
       {id: 'unmarked', label: '未计', count: sheet.people.length - marked},
     );
   } else if (kind === 'custom') {
-    const unset = sheet.people.filter((person) => personChoice(person) === '').length;
+    const unset = sheet.people.filter((person) => personChoices(person).length === 0).length;
     chips.push({id: 'all', label: '全部', count: sheet.people.length});
     chips.push({id: 'unset', label: '未选', count: unset});
     for (const option of sheet.options ?? []) {
       chips.push({
         id: option.id,
         label: option.label,
-        count: sheet.people.filter((person) => personChoice(person) === option.id).length,
+        count: sheet.people.filter((person) => personChoices(person).includes(option.id)).length,
       });
     }
   } else {
@@ -657,9 +641,9 @@ function matchesFilter(sheet: SessionSheet, person: SessionPerson, filter: strin
   }
   if (kind === 'custom') {
     if (filter === 'unset') {
-      return personChoice(person) === '';
+      return personChoices(person).length === 0;
     }
-    return personChoice(person) === filter;
+    return personChoices(person).includes(filter);
   }
   return person.status === filter;
 }

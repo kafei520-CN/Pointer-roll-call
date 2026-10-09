@@ -4,8 +4,8 @@ import {
   countMode,
   formatSequence,
   formatTally,
-  optionLabel,
-  personChoice,
+  optionLabels,
+  personChoices,
   personMarked,
   sheetKind,
 } from './sheet-record';
@@ -124,7 +124,7 @@ function recordValue(sheet: SessionSheet, person: SessionPerson): string {
     return countMode(sheet) === 'sequence' ? formatSequence(person) : formatTally(person);
   }
   if (kind === 'custom') {
-    return optionLabel(sheet.options, personChoice(person));
+    return optionLabels(sheet.options, personChoices(person));
   }
   return EXPORT_LABEL[person.status];
 }

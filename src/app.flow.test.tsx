@@ -239,11 +239,13 @@ describe('local roll-call flow', () => {
     expect(within(zhang).getByRole('button', {name: '2'}).getAttribute('aria-pressed')).toBe('false');
     expect(within(zhang).getByText('0 次')).toBeTruthy();
     await user.click(within(zhang).getByRole('button', {name: '1'}));
+    await user.click(within(zhang).getByRole('button', {name: '2'}));
     expect(within(zhang).getByRole('button', {name: '1'}).getAttribute('aria-pressed')).toBe('true');
-    expect(within(zhang).getByText('1 次')).toBeTruthy();
+    expect(within(zhang).getByRole('button', {name: '2'}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(zhang).getByText('2 次')).toBeTruthy();
     await user.click(within(zhang).getByRole('button', {name: '1'}));
     expect(within(zhang).getByRole('button', {name: '1'}).getAttribute('aria-pressed')).toBe('false');
-    expect(within(zhang).getByRole('button', {name: '2'})).toBeTruthy();
+    expect(within(zhang).getByRole('button', {name: '2'}).getAttribute('aria-pressed')).toBe('true');
     await user.click(within(zhang).getByRole('button', {name: '删除最后一个序号'}));
     expect(within(zhang).queryByRole('button', {name: '2'})).toBeNull();
     expect(within(zhang).getByRole('button', {name: '1'})).toBeTruthy();

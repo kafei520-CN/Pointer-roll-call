@@ -131,6 +131,7 @@ export function buildTemplateSheets(
       people: extracted.people,
       kind,
       countMode: kind === 'count' ? (item.countMode ?? 'tally') : undefined,
+      selectMode: kind === 'custom' ? (item.selectMode ?? 'single') : undefined,
       options: kind === 'custom' ? [] : undefined,
     });
   });

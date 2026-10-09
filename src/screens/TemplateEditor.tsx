@@ -2,7 +2,7 @@ import {useEffect, useMemo, useState} from 'react';
 import {IconPlus, IconTrash} from '../icons';
 import {createId} from '../lib/id';
 import {buildSearchKeys} from '../lib/search';
-import {countMode, sheetKind} from '../lib/sheet-record';
+import {countMode, selectMode, sheetKind} from '../lib/sheet-record';
 import {emptySheet, upsertTemplate, useApp} from '../lib/store';
 import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
@@ -184,7 +184,19 @@ export function TemplateEditor({id}: {id: string}) {
         ) : null}
         {sheetKind(sheet) === 'custom' ? (
           <div className="mb-4 space-y-2">
-            <p className="text-xs text-mute">选项会变成点名时的按钮。</p>
+            <Segmented
+              value={selectMode(sheet)}
+              onChange={(mode) => updateSheet(sheet.id, {selectMode: mode})}
+              options={[
+                {value: 'single', label: '单选'},
+                {value: 'multi', label: '多选'},
+              ]}
+            />
+            <p className="text-xs text-mute">
+              {selectMode(sheet) === 'multi'
+                ? '可以同时选中多个。再点一次取消。'
+                : '只能选中一个。再点一次取消。'}
+            </p>
             <ul className="space-y-2">
               {(sheet.options ?? []).map((option) => (
                 <li key={option.id} className="flex items-center gap-2">

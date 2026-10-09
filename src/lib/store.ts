@@ -12,9 +12,11 @@ import {
   addSequenceSlot,
   addTally,
   appendMark,
+  applyOption,
   countMode,
   deleteSequenceNumber,
   dropLastMark,
+  selectMode,
   sheetSequence,
   toggleOwnMark,
 } from './sheet-record';
@@ -98,6 +100,7 @@ export function emptySheet(name = '名单', kind: SheetKind = 'roll'): TemplateS
     people: [],
     kind,
     countMode: kind === 'count' ? 'tally' : undefined,
+    selectMode: kind === 'custom' ? 'single' : undefined,
     options: kind === 'custom' ? [] : undefined,
   };
 }
@@ -160,6 +163,7 @@ export function clonePerson(person: Person): SessionPerson {
     marks: [],
     count: 0,
     choice: '',
+    choices: [],
   };
 }
 
@@ -181,6 +185,7 @@ export async function createSession(templateId: string, name: string): Promise<S
       name: sheet.name,
       kind: sheet.kind ?? 'roll',
       countMode: sheet.countMode ?? 'tally',
+      selectMode: sheet.selectMode ?? 'single',
       options: (sheet.options ?? []).map((option) => ({...option})),
       columns: sheet.columns.map((col) => ({...col})),
       people: sheet.people.map(clonePerson),
@@ -321,11 +326,9 @@ export async function chooseOption(
   if (!session) {
     return;
   }
-  const next = withPerson(session, sheetId, personId, (person) => ({
-    ...person,
-    choice,
-    markedAt: Date.now(),
-  }));
+  const next = withPerson(session, sheetId, personId, (person, sheet) =>
+    applyOption(person, choice, selectMode(sheet)),
+  );
   await writeSession(next);
 }
 
