@@ -3,6 +3,7 @@ import type {SessionPerson} from '../types';
 import {
   addTally,
   appendMark,
+  deleteSequenceNumber,
   dropLastMark,
   formatSequence,
   formatTally,
@@ -50,6 +51,14 @@ describe('count sheet records', () => {
     const taken = toggleSheetMark(people, 'b', 1);
     expect(taken[0].marks).toEqual([3]);
     expect(taken[1].marks).toEqual([2, 1].sort((left, right) => left - right));
+  });
+
+  it('removes a middle sequence number without leaving a placeholder', () => {
+    const people = [person('a', [1, 2, 4]), person('b', [3])];
+    const next = deleteSequenceNumber(people, 2);
+    expect(next[0].marks).toEqual([1, 4]);
+    expect(sequenceNumbers(next)).toEqual([1, 3, 4]);
+    expect(sequenceNumbers(deleteSequenceNumber(next, 3))).toEqual([1, 4]);
   });
 
   it('stores a plain tally and does not go below zero', () => {

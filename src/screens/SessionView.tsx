@@ -30,6 +30,7 @@ import {
   bumpCount,
   chooseOption,
   closeSession,
+  deleteCountNumber,
   markPerson,
   reopenSession,
   toggleCountNumber,
@@ -194,7 +195,7 @@ export function SessionView({id}: {id: string}) {
         {sheetKind(sheet) === 'count' ? (
           <p className="text-xs text-mute">
             {countMode(sheet) === 'sequence'
-              ? '点加号增加一个序号。点数字可以选上或取消，多了就左右滑动。'
+              ? '点加号增加序号，点数字选上或取消。长按数字把它删掉，减号删除最后一个。'
               : '点一下加 1 次。数字就是次数。'}
           </p>
         ) : null}
@@ -217,6 +218,7 @@ export function SessionView({id}: {id: string}) {
                 onToggleMark={(mark) =>
                   void toggleCountNumber(session.id, sheet.id, person.id, mark)
                 }
+                onDeleteMark={(mark) => void deleteCountNumber(session.id, sheet.id, mark)}
                 onChoice={(choice) => void chooseOption(session.id, sheet.id, person.id, choice)}
               />
             ))}
@@ -343,6 +345,7 @@ function PersonCard({
   onStatus,
   onCount,
   onToggleMark,
+  onDeleteMark,
   onChoice,
 }: {
   person: SessionPerson;
@@ -351,6 +354,7 @@ function PersonCard({
   onStatus: (status: Status) => void;
   onCount: (delta: 1 | -1) => void;
   onToggleMark: (mark: number) => void;
+  onDeleteMark: (mark: number) => void;
   onChoice: (choice: string) => void;
 }) {
   const extra = sheet.columns
@@ -412,6 +416,7 @@ function PersonCard({
           numbers={sequenceNumbers(sheet.people)}
           selected={personMarks(person)}
           onToggle={onToggleMark}
+          onDelete={onDeleteMark}
           onAdd={() => onCount(1)}
         />
       ) : null}
@@ -464,27 +469,30 @@ function SequenceRow({
   numbers,
   selected,
   onToggle,
+  onDelete,
   onAdd,
 }: {
   numbers: number[];
   selected: number[];
   onToggle: (mark: number) => void;
+  onDelete: (mark: number) => void;
   onAdd: () => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
+  const holdTimer = useRef(0);
+  const holdFired = useRef(false);
   useEffect(() => {
     const node = scroller.current;
     if (node) {
       node.scrollLeft = node.scrollWidth;
     }
   }, [numbers.length]);
+  useEffect(() => () => window.clearTimeout(holdTimer.current), []);
   const chosen = new Set(selected);
+  const last = numbers[numbers.length - 1];
   return (
     <div className="mt-3 flex items-center gap-1">
-      <div
-        ref={scroller}
-        className="flex w-[10.75rem] gap-1 overflow-x-auto"
-      >
+      <div ref={scroller} className="flex w-[10.75rem] gap-1 overflow-x-auto">
         {numbers.map((mark) => {
           const on = chosen.has(mark);
           return (
@@ -492,7 +500,25 @@ function SequenceRow({
               key={mark}
               type="button"
               aria-pressed={on}
-              onClick={() => onToggle(mark)}
+              onPointerDown={() => {
+                holdFired.current = false;
+                window.clearTimeout(holdTimer.current);
+                holdTimer.current = window.setTimeout(() => {
+                  holdFired.current = true;
+                  onDelete(mark);
+                }, 450);
+              }}
+              onPointerUp={() => window.clearTimeout(holdTimer.current)}
+              onPointerLeave={() => window.clearTimeout(holdTimer.current)}
+              onPointerCancel={() => window.clearTimeout(holdTimer.current)}
+              onContextMenu={(event) => event.preventDefault()}
+              onClick={() => {
+                if (holdFired.current) {
+                  holdFired.current = false;
+                  return;
+                }
+                onToggle(mark);
+              }}
               className={cx(
                 'h-10 w-10 shrink-0 rounded-2xl text-sm',
                 on ? 'bg-ink text-white' : 'bg-soft text-ink',
@@ -503,6 +529,19 @@ function SequenceRow({
           );
         })}
       </div>
+      <button
+        type="button"
+        aria-label="删除最后一个序号"
+        disabled={last === undefined}
+        onClick={() => {
+          if (last !== undefined) {
+            onDelete(last);
+          }
+        }}
+        className="h-10 w-10 shrink-0 rounded-2xl bg-soft text-sm disabled:opacity-40"
+      >
+        −
+      </button>
       <button
         type="button"
         aria-label="记一次"

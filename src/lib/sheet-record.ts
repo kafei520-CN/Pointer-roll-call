@@ -72,11 +72,21 @@ export function dropLastMark(person: SessionPerson): SessionPerson {
 }
 
 export function sequenceNumbers(people: SessionPerson[]): number[] {
-  const highest = nextSequence(people) - 1;
-  if (highest <= 0) {
-    return [];
+  const found = new Set<number>();
+  for (const person of people) {
+    for (const mark of personMarks(person)) {
+      found.add(mark);
+    }
   }
-  return Array.from({length: highest}, (_, index) => index + 1);
+  return [...found].sort((left, right) => left - right);
+}
+
+export function deleteSequenceNumber(people: SessionPerson[], mark: number): SessionPerson[] {
+  return people.map((person) =>
+    personMarks(person).includes(mark)
+      ? {...person, marks: personMarks(person).filter((item) => item !== mark)}
+      : person,
+  );
 }
 
 export function toggleSheetMark(
