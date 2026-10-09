@@ -21,8 +21,8 @@ import {
   personMarked,
   personMarks,
   recordSummary,
-  sequenceNumbers,
   sheetKind,
+  sheetSequence,
   unmarkedWord,
 } from '../lib/sheet-record';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
@@ -195,7 +195,7 @@ export function SessionView({id}: {id: string}) {
         {sheetKind(sheet) === 'count' ? (
           <p className="text-xs text-mute">
             {countMode(sheet) === 'sequence'
-              ? '点加号增加序号，点数字选上或取消。长按数字把它删掉，减号删除最后一个。'
+              ? '点加号增加一个未选中的序号。点一下只选中自己，再点取消。长按或减号才从数列里删除。'
               : '点一下加 1 次。数字就是次数。'}
           </p>
         ) : null}
@@ -413,7 +413,7 @@ function PersonCard({
       ) : null}
       {sequence ? (
         <SequenceRow
-          numbers={sequenceNumbers(sheet.people)}
+          numbers={sheetSequence(sheet)}
           selected={personMarks(person)}
           onToggle={onToggleMark}
           onDelete={onDeleteMark}

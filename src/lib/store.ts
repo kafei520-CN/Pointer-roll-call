@@ -9,12 +9,14 @@ import type {
   TemplateSheet,
 } from '../types';
 import {
+  addSequenceSlot,
   addTally,
   appendMark,
   countMode,
   deleteSequenceNumber,
   dropLastMark,
-  toggleSheetMark,
+  sheetSequence,
+  toggleOwnMark,
 } from './sheet-record';
 import {
   initDb,
@@ -235,6 +237,20 @@ export async function bumpCount(
   if (!session) {
     return;
   }
+  const target = session.sheets.find((sheet) => sheet.id === sheetId);
+  if (target && countMode(target) === 'sequence' && delta > 0) {
+    const next: Session = {
+      ...session,
+      updatedAt: Date.now(),
+      sheets: session.sheets.map((sheet) =>
+        sheet.id === sheetId
+          ? {...sheet, sequence: addSequenceSlot(sheetSequence(sheet))}
+          : sheet,
+      ),
+    };
+    await writeSession(next);
+    return;
+  }
   const next = withPerson(session, sheetId, personId, (person, sheet) => {
     if (countMode(sheet) === 'sequence') {
       return delta < 0 ? dropLastMark(person) : appendMark(person, sheet.people);
@@ -258,7 +274,11 @@ export async function deleteCountNumber(
     updatedAt: Date.now(),
     sheets: session.sheets.map((sheet) =>
       sheet.id === sheetId
-        ? {...sheet, people: deleteSequenceNumber(sheet.people, mark)}
+        ? {
+            ...sheet,
+            sequence: sheetSequence(sheet).filter((item) => item !== mark),
+            people: deleteSequenceNumber(sheet.people, mark),
+          }
         : sheet,
     ),
   };
@@ -280,7 +300,11 @@ export async function toggleCountNumber(
     updatedAt: Date.now(),
     sheets: session.sheets.map((sheet) =>
       sheet.id === sheetId
-        ? {...sheet, people: toggleSheetMark(sheet.people, personId, mark)}
+        ? {
+            ...sheet,
+            sequence: sheetSequence(sheet),
+            people: toggleOwnMark(sheet.people, personId, mark),
+          }
         : sheet,
     ),
   };

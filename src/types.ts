@@ -80,6 +80,8 @@ export interface SessionSheet {
   kind?: SheetKind;
   countMode?: CountMode;
   options?: SheetOption[];
+  /** 数列里可点的序号。缺省时从已选数字推导。新加的数字先放这里，默认无人选中。 */
+  sequence?: number[];
 }
 
 export interface Session {

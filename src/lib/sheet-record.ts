@@ -81,42 +81,43 @@ export function sequenceNumbers(people: SessionPerson[]): number[] {
   return [...found].sort((left, right) => left - right);
 }
 
+export function sheetSequence(sheet: {sequence?: number[]; people: SessionPerson[]}): number[] {
+  const numbers = sheet.sequence ?? sequenceNumbers(sheet.people);
+  return [...numbers].sort((left, right) => left - right);
+}
+
+export function addSequenceSlot(numbers: number[]): number[] {
+  const highest = numbers.reduce((max, mark) => Math.max(max, mark), 0);
+  return [...numbers, highest + 1];
+}
+
+export function toggleOwnMark(
+  people: SessionPerson[],
+  personId: string,
+  mark: number,
+): SessionPerson[] {
+  return people.map((person) => {
+    if (person.id !== personId) {
+      return person;
+    }
+    const marks = personMarks(person);
+    if (marks.includes(mark)) {
+      return {...person, marks: marks.filter((item) => item !== mark)};
+    }
+    return {
+      ...person,
+      marks: [...marks, mark].sort((left, right) => left - right),
+      markedAt: Date.now(),
+    };
+  });
+}
+
 export function deleteSequenceNumber(people: SessionPerson[], mark: number): SessionPerson[] {
   return people.map((person) =>
     personMarks(person).includes(mark)
       ? {...person, marks: personMarks(person).filter((item) => item !== mark)}
       : person,
   );
-}
-
-export function toggleSheetMark(
-  people: SessionPerson[],
-  personId: string,
-  mark: number,
-): SessionPerson[] {
-  const mine = people.find((person) => person.id === personId);
-  if (!mine) {
-    return people;
-  }
-  const has = personMarks(mine).includes(mark);
-  return people.map((person) => {
-    if (has) {
-      return person.id === personId
-        ? {...person, marks: personMarks(person).filter((item) => item !== mark)}
-        : person;
-    }
-    if (person.id === personId) {
-      return {
-        ...person,
-        marks: [...personMarks(person), mark].sort((left, right) => left - right),
-        markedAt: Date.now(),
-      };
-    }
-    if (!personMarks(person).includes(mark)) {
-      return person;
-    }
-    return {...person, marks: personMarks(person).filter((item) => item !== mark)};
-  });
 }
 
 export function addTally(person: SessionPerson, delta: number): SessionPerson {

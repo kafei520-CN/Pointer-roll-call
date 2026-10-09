@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import type {SessionPerson} from '../types';
 import {
+  addSequenceSlot,
   addTally,
   appendMark,
   deleteSequenceNumber,
@@ -10,7 +11,7 @@ import {
   nextChoice,
   personMarked,
   sequenceNumbers,
-  toggleSheetMark,
+  toggleOwnMark,
 } from './sheet-record';
 
 function person(id: string, marks: number[] = [], count = 0): SessionPerson {
@@ -43,14 +44,15 @@ describe('count sheet records', () => {
     expect(formatSequence(appendMark(undone, [undone, later]))).toBe('1、5');
   });
 
-  it('lets a person take or drop any existing sequence number', () => {
-    const people = [person('a', [1, 3]), person('b', [2])];
-    const dropped = toggleSheetMark(people, 'a', 3);
-    expect(dropped[0].marks).toEqual([1]);
-    expect(sequenceNumbers(dropped)).toEqual([1, 2]);
-    const taken = toggleSheetMark(people, 'b', 1);
-    expect(taken[0].marks).toEqual([3]);
-    expect(taken[1].marks).toEqual([2, 1].sort((left, right) => left - right));
+  it('adds the next number unselected and toggles only the current person', () => {
+    const people = [person('a', [1]), person('b', [1])];
+    expect(addSequenceSlot([1])).toEqual([1, 2]);
+    const cleared = toggleOwnMark(people, 'a', 1);
+    expect(cleared[0].marks).toEqual([]);
+    expect(cleared[1].marks).toEqual([1]);
+    const selected = toggleOwnMark(cleared, 'a', 2);
+    expect(selected[0].marks).toEqual([2]);
+    expect(selected[1].marks).toEqual([1]);
   });
 
   it('removes a middle sequence number without leaving a placeholder', () => {
