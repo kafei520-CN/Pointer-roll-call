@@ -10,12 +10,25 @@ import {
   type ExportShape,
 } from '../lib/export-roll';
 import {stageExport} from '../lib/export-handoff';
-import {closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {matchesQuery} from '../lib/search';
+import {
+  countMode,
+  countValue,
+  formatSequence,
+  markedTotals,
+  nextChoice,
+  optionLabel,
+  personChoice,
+  personMarked,
+  recordSummary,
+  sheetKind,
+  unmarkedWord,
+} from '../lib/sheet-record';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
+import {bumpCount, chooseOption, closeSession, markPerson, reopenSession, useApp} from '../lib/store';
 import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
-import type {Session, SessionPerson, Status} from '../types';
+import type {Session, SessionPerson, SessionSheet, Status} from '../types';
 import {STATUSES} from '../types';
 import {Button, Modal, Shell, SheetTabs, TopBar, cx} from '../ui';
 
@@ -24,7 +37,7 @@ export function SessionView({id}: {id: string}) {
   const session = app.sessions.find((item) => item.id === id);
   const [sheetId, setSheetId] = useState(session?.sheets[0]?.id ?? '');
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<Status | 'all'>('all');
+  const [filter, setFilter] = useState('all');
   const [closeOpen, setCloseOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportGroups, setExportGroups] = useState<Status[]>([]);
@@ -51,6 +64,10 @@ export function SessionView({id}: {id: string}) {
     }
   }, [session, sheetId]);
 
+  useEffect(() => {
+    setFilter('all');
+  }, [sheetId]);
+
   const sheet = session?.sheets.find((item) => item.id === sheetId) ?? session?.sheets[0];
 
   const visible = useMemo(() => {
@@ -58,7 +75,7 @@ export function SessionView({id}: {id: string}) {
       return [];
     }
     return sheet.people.filter((person) => {
-      if (filter !== 'all' && person.status !== filter) {
+      if (!matchesFilter(sheet, person, filter)) {
         return false;
       }
       return matchesQuery(person.search, person.name, query);
@@ -75,6 +92,7 @@ export function SessionView({id}: {id: string}) {
 
   const stats = sheetStats(sheet);
   const all = sessionStats(session);
+  const recorded = markedTotals(session);
   const roll = session;
 
   async function onClose() {
@@ -124,8 +142,12 @@ export function SessionView({id}: {id: string}) {
         title={session.name}
         subtitle={
           session.closedAt
-            ? `历史 · 到 ${all.present} · 缺 ${all.absent} · 未点 ${all.unset}`
-            : `到 ${stats.present} · 缺 ${stats.absent} · 未点 ${stats.unset}`
+            ? session.sheets.every((item) => sheetKind(item) === 'roll')
+              ? `历史 · 到 ${all.present} · 缺 ${all.absent} · 未点 ${all.unset}`
+              : `历史 · 已记录 ${recorded.marked}/${recorded.total}`
+            : sheetKind(sheet) === 'roll'
+              ? `到 ${stats.present} · 缺 ${stats.absent} · 未点 ${stats.unset}`
+              : recordSummary(sheet)
         }
         onBack={() => go('/')}
         right={
@@ -159,26 +181,14 @@ export function SessionView({id}: {id: string}) {
             className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none"
           />
         </label>
-        <div className="flex flex-wrap gap-1">
-          {(['all', ...STATUSES] as const).map((item) => {
-            const label = item === 'all' ? '全部' : STATUS_LABEL[item];
-            const count =
-              item === 'all' ? stats.total : stats[item];
-            return (
-              <button
-                key={item}
-                type="button"
-                onClick={() => setFilter(item)}
-                className={cx(
-                  'h-9 shrink-0 rounded-full px-3 text-xs',
-                  filter === item ? 'bg-ink text-white' : 'bg-soft text-ink',
-                )}
-              >
-                {label} {count}
-              </button>
-            );
-          })}
-        </div>
+        <FilterRow sheet={sheet} filter={filter} onChange={setFilter} />
+        {sheetKind(sheet) === 'count' ? (
+          <p className="text-xs text-mute">
+            {countMode(sheet) === 'sequence'
+              ? '点一下记入下一个序号。1、3、5 表示这三次，个数就是次数。'
+              : '点一下加 1 次。数字就是次数。'}
+          </p>
+        ) : null}
       </div>
       <main className="flex-1 overflow-y-auto px-4 py-3 pb-2" data-testid="menu-swipe" {...swipeSheets}>
         {visible.length === 0 ? (
@@ -190,10 +200,12 @@ export function SessionView({id}: {id: string}) {
                 key={person.id}
                 person={person}
                 order={sheet.people.findIndex((item) => item.id === person.id) + 1}
-                columns={sheet.columns}
+                sheet={sheet}
                 onStatus={(status) =>
                   void markPerson(session.id, sheet.id, person.id, status)
                 }
+                onCount={(delta) => void bumpCount(session.id, sheet.id, person.id, delta)}
+                onChoice={(choice) => void chooseOption(session.id, sheet.id, person.id, choice)}
               />
             ))}
           </ul>
@@ -288,7 +300,7 @@ export function SessionView({id}: {id: string}) {
         </div>
         <Button
           className="mt-4 w-full"
-          disabled={exportScope === 'selected' && exportGroups.length === 0}
+          disabled={!canShowExport(roll, exportScope, exportGroups)}
           onClick={showMarkdown}
         >
           显示文字
@@ -297,8 +309,8 @@ export function SessionView({id}: {id: string}) {
       </Modal>
       <Modal open={closeOpen} title="关闭点名" onClose={() => setCloseOpen(false)}>
         <p className="text-sm text-mute">
-          {stats.unset > 0
-            ? `当前表还有 ${stats.unset} 人未点。关闭后可在历史里再次打开。`
+          {unmarkedOn(sheet) > 0
+            ? `当前表还有 ${unmarkedOn(sheet)} 人${unmarkedWord(sheetKind(sheet))}。关闭后可在历史里再次打开。`
             : '关闭后可在历史里查看。'}
         </p>
         <div className="mt-4 grid grid-cols-2 gap-2">
@@ -315,18 +327,23 @@ export function SessionView({id}: {id: string}) {
 function PersonCard({
   person,
   order,
-  columns,
+  sheet,
   onStatus,
+  onCount,
+  onChoice,
 }: {
   person: SessionPerson;
   order: number;
-  columns: Array<{key: string; label: string}>;
+  sheet: SessionSheet;
   onStatus: (status: Status) => void;
+  onCount: (delta: 1 | -1) => void;
+  onChoice: (choice: string) => void;
 }) {
-  const extra = columns
+  const extra = sheet.columns
     .map((col) => person.fields[col.key])
     .filter(Boolean)
     .join(' · ');
+  const kind = sheetKind(sheet);
   return (
     <li className="rounded-3xl border border-line bg-white p-3">
       <div className="flex items-start gap-3">
@@ -334,42 +351,202 @@ function PersonCard({
         <button
           type="button"
           className="min-w-0 flex-1 text-left"
-          onClick={() => onStatus(cycle(person.status))}
+          onClick={() => {
+            if (kind === 'count') {
+              onCount(1);
+              return;
+            }
+            if (kind === 'custom') {
+              onChoice(nextChoice(personChoice(person), sheet.options ?? []));
+              return;
+            }
+            onStatus(cycle(person.status));
+          }}
         >
           <p className="truncate font-medium">{person.name}</p>
           {extra ? <p className="mt-0.5 truncate text-xs text-mute">{extra}</p> : null}
+          {kind === 'count' && countMode(sheet) === 'sequence' ? (
+            <p className="mt-0.5 text-sm break-all">{formatSequence(person) || '未计'}</p>
+          ) : null}
         </button>
-        <span
+        <RecordBadge person={person} sheet={sheet} />
+      </div>
+      {kind === 'roll' ? (
+        <div className="mt-3 grid grid-cols-4 gap-1">
+          {(['present', 'absent', 'leave', 'late'] as const).map((status) => (
+            <button
+              key={status}
+              type="button"
+              onClick={() => onStatus(status)}
+              className={cx(
+                'h-10 rounded-2xl text-sm',
+                person.status === status ? 'bg-ink text-white' : 'bg-soft text-ink',
+              )}
+            >
+              {STATUS_LABEL[status]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {kind === 'count' ? (
+        <div className="mt-3 grid grid-cols-2 gap-1">
+          <button
+            type="button"
+            aria-label="撤销上一次"
+            onClick={() => onCount(-1)}
+            className="h-10 rounded-2xl bg-soft text-sm"
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="记一次"
+            onClick={() => onCount(1)}
+            className="h-10 rounded-2xl bg-ink text-sm text-white"
+          >
+            +
+          </button>
+        </div>
+      ) : null}
+      {kind === 'custom' ? (
+        (sheet.options ?? []).length === 0 ? (
+          <p className="mt-3 text-xs text-mute">还没有选项。回到模板里添加。</p>
+        ) : (
+          <div className="mt-3 flex flex-wrap gap-1">
+            {(sheet.options ?? []).map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => onChoice(personChoice(person) === option.id ? '' : option.id)}
+                className={cx(
+                  'h-10 rounded-2xl px-3 text-sm',
+                  personChoice(person) === option.id ? 'bg-ink text-white' : 'bg-soft text-ink',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )
+      ) : null}
+    </li>
+  );
+}
+
+function RecordBadge({person, sheet}: {person: SessionPerson; sheet: SessionSheet}) {
+  const kind = sheetKind(sheet);
+  if (kind === 'count') {
+    const value = countValue(person, countMode(sheet));
+    return (
+      <span className={cx('rounded-full px-2 py-1 text-xs', value > 0 ? 'bg-ink text-white' : 'bg-soft text-mute')}>
+        {value} 次
+      </span>
+    );
+  }
+  if (kind === 'custom') {
+    const label = optionLabel(sheet.options, personChoice(person));
+    return (
+      <span className={cx('rounded-full px-2 py-1 text-xs', label ? 'bg-ink text-white' : 'bg-soft text-mute')}>
+        {label || '未选'}
+      </span>
+    );
+  }
+  return (
+    <span
+      className={cx(
+        'rounded-full px-2 py-1 text-xs',
+        person.status === 'present' && 'bg-ink text-white',
+        person.status === 'unset' && 'bg-soft text-mute',
+        person.status !== 'present' && person.status !== 'unset' && 'border border-ink',
+      )}
+    >
+      {STATUS_LABEL[person.status]}
+    </span>
+  );
+}
+
+function FilterRow({
+  sheet,
+  filter,
+  onChange,
+}: {
+  sheet: SessionSheet;
+  filter: string;
+  onChange: (filter: string) => void;
+}) {
+  const kind = sheetKind(sheet);
+  const chips: Array<{id: string; label: string; count: number}> = [];
+  if (kind === 'count') {
+    const marked = sheet.people.filter((person) => personMarked(person, sheet)).length;
+    chips.push(
+      {id: 'all', label: '全部', count: sheet.people.length},
+      {id: 'marked', label: '已计', count: marked},
+      {id: 'unmarked', label: '未计', count: sheet.people.length - marked},
+    );
+  } else if (kind === 'custom') {
+    const unset = sheet.people.filter((person) => personChoice(person) === '').length;
+    chips.push({id: 'all', label: '全部', count: sheet.people.length});
+    chips.push({id: 'unset', label: '未选', count: unset});
+    for (const option of sheet.options ?? []) {
+      chips.push({
+        id: option.id,
+        label: option.label,
+        count: sheet.people.filter((person) => personChoice(person) === option.id).length,
+      });
+    }
+  } else {
+    const stats = sheetStats(sheet);
+    chips.push({id: 'all', label: '全部', count: stats.total});
+    for (const status of STATUSES) {
+      chips.push({id: status, label: STATUS_LABEL[status], count: stats[status]});
+    }
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <button
+          key={chip.id}
+          type="button"
+          onClick={() => onChange(chip.id)}
           className={cx(
-            'rounded-full px-2 py-1 text-xs',
-            person.status === 'present' && 'bg-ink text-white',
-            person.status === 'unset' && 'bg-soft text-mute',
-            person.status !== 'present' && person.status !== 'unset' && 'border border-ink',
+            'h-9 shrink-0 rounded-full px-3 text-xs',
+            filter === chip.id ? 'bg-ink text-white' : 'bg-soft text-ink',
           )}
         >
-          {STATUS_LABEL[person.status]}
-        </span>
-      </div>
-      <div className="mt-3 grid grid-cols-4 gap-1">
-        {(['present', 'absent', 'leave', 'late'] as const).map((status) => (
-          <button
-            key={status}
-            type="button"
-            onClick={() => onStatus(status)}
-            className={cx(
-              'h-10 rounded-2xl text-sm',
-              person.status === status ? 'bg-ink text-white' : 'bg-soft text-ink',
-            )}
-          >
-            {STATUS_LABEL[status]}
-          </button>
-        ))}
-      </div>
-    </li>
+          {chip.label} {chip.count}
+        </button>
+      ))}
+    </div>
   );
 }
 
 function cycle(status: Status): Status {
   const order: Status[] = ['unset', 'present', 'absent', 'leave', 'late'];
   return order[(order.indexOf(status) + 1) % order.length];
+}
+
+function matchesFilter(sheet: SessionSheet, person: SessionPerson, filter: string): boolean {
+  if (filter === 'all') {
+    return true;
+  }
+  const kind = sheetKind(sheet);
+  if (kind === 'count') {
+    const marked = personMarked(person, sheet);
+    return filter === 'marked' ? marked : !marked;
+  }
+  if (kind === 'custom') {
+    if (filter === 'unset') {
+      return personChoice(person) === '';
+    }
+    return personChoice(person) === filter;
+  }
+  return person.status === filter;
+}
+
+function unmarkedOn(sheet: SessionSheet): number {
+  return sheet.people.filter((person) => !personMarked(person, sheet)).length;
+}
+
+function canShowExport(session: Session, scope: ExportScope, groups: Status[]): boolean {
+  return exportTables(session, groups, 'brief', {}, scope).length > 0;
 }

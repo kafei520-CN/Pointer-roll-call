@@ -1,7 +1,7 @@
 import {useMemo, useState} from 'react';
 import {IconPlus, IconTrash} from '../icons';
 import {defaultSessionName, formatWhen} from '../lib/format';
-import {sessionStats} from '../lib/status';
+import {markedTotals} from '../lib/sheet-record';
 import {
   createBlankTemplate,
   createSession,
@@ -237,9 +237,8 @@ function SessionsPane({
 }
 
 function SessionCard({session, onDelete}: {session: Session; onDelete: () => void}) {
-  const stats = sessionStats(session);
-  const marked = stats.total - stats.unset;
-  const ratio = stats.total === 0 ? 0 : marked / stats.total;
+  const progress = markedTotals(session);
+  const ratio = progress.total === 0 ? 0 : progress.marked / progress.total;
   return (
     <div className="rounded-3xl border border-line bg-white p-4">
       <div className="flex items-start justify-between gap-3">
@@ -251,7 +250,7 @@ function SessionCard({session, onDelete}: {session: Session; onDelete: () => voi
           <p className="truncate font-medium">{session.name}</p>
           <p className="mt-1 text-xs text-mute">
             {session.closedAt ? '已关闭 · ' : ''}
-            {formatWhen(session.updatedAt)} · {marked}/{stats.total} 已点
+            {formatWhen(session.updatedAt)} · {progress.marked}/{progress.total} 已点
           </p>
         </button>
         <button

@@ -197,6 +197,48 @@ describe('local roll-call flow', () => {
     expect(screen.getByDisplayValue('张三')).toBeTruthy();
   });
 
+  it('counts with a sequence and picks a custom option', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByRole('heading', {name: '指针点名'});
+    await user.click(screen.getByRole('button', {name: '模板'}));
+    await user.click(screen.getByRole('button', {name: '空白模板'}));
+    await screen.findByRole('heading', {name: '编辑模板'});
+
+    await user.click(screen.getByRole('button', {name: '新增工作表'}));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', {name: /计数表/}));
+    await user.click(screen.getByRole('button', {name: '数列'}));
+    await user.type(screen.getByPlaceholderText('添加姓名'), '张三{Enter}');
+
+    await user.click(screen.getByRole('button', {name: '新增工作表'}));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', {name: /自定义/}));
+    await user.type(screen.getByPlaceholderText('添加选项'), '优秀{Enter}');
+    await user.type(screen.getByPlaceholderText('添加姓名'), '李四{Enter}');
+    expect(screen.getByDisplayValue('优秀')).toBeTruthy();
+    expect(screen.getByDisplayValue('李四')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', {name: '保存'}));
+    expect(await screen.findByRole('heading', {name: '指针点名'})).toBeTruthy();
+    await user.click(await screen.findByRole('button', {name: '从模板新建'}));
+    await user.click(within(await screen.findByRole('dialog')).getByText('未命名模板'));
+    await user.click(screen.getByRole('button', {name: '开始点名'}));
+
+    await user.click(await screen.findByRole('button', {name: '计数'}));
+    const zhang = screen.getByText('张三').closest('li') as HTMLElement;
+    await user.click(within(zhang).getByRole('button', {name: '记一次'}));
+    await user.click(within(zhang).getByRole('button', {name: '记一次'}));
+    expect(within(zhang).getByText('1、2')).toBeTruthy();
+    expect(within(zhang).getByText('2 次')).toBeTruthy();
+    await user.click(within(zhang).getByRole('button', {name: '撤销上一次'}));
+    expect(within(zhang).queryByText('1、2')).toBeNull();
+    expect(within(zhang).getByText('1 次')).toBeTruthy();
+
+    await user.click(screen.getByRole('button', {name: '自定义'}));
+    const li = screen.getByText('李四').closest('li') as HTMLElement;
+    await user.click(within(li).getByRole('button', {name: '优秀'}));
+    expect(within(li).getAllByText('优秀').length).toBeGreaterThan(1);
+  });
+
   it('keeps an unreadable opened file on the import screen', async () => {
     render(<App />);
     await screen.findByRole('heading', {name: '指针点名'});

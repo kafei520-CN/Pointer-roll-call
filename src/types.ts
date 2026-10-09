@@ -2,6 +2,21 @@ export const STATUSES = ['unset', 'present', 'absent', 'leave', 'late'] as const
 
 export type Status = (typeof STATUSES)[number];
 
+/** roll 是到/缺/假/迟。count 记次数。custom 用模板里定义的选项。 */
+export const SHEET_KINDS = ['roll', 'count', 'custom'] as const;
+
+export type SheetKind = (typeof SHEET_KINDS)[number];
+
+/** sequence 记下全表序号，例如 1、3、5。tally 只记次数，例如 3。 */
+export const COUNT_MODES = ['sequence', 'tally'] as const;
+
+export type CountMode = (typeof COUNT_MODES)[number];
+
+export interface SheetOption {
+  id: string;
+  label: string;
+}
+
 export interface SearchKeys {
   name: string;
   pinyin: string;
@@ -29,6 +44,10 @@ export interface TemplateSheet {
   nameColumnLabel: string;
   columns: Column[];
   people: Person[];
+  /** 缺省视为点名表，旧模板不用迁移。 */
+  kind?: SheetKind;
+  countMode?: CountMode;
+  options?: SheetOption[];
 }
 
 export interface Template {
@@ -45,6 +64,12 @@ export interface SessionPerson extends Person {
   status: Status;
   note: string;
   markedAt?: number;
+  /** 计数表数列。数字是全表第几次点到，可以不连续。 */
+  marks?: number[];
+  /** 计数表次数。 */
+  count?: number;
+  /** 自定义表当前选项 id。空字符串表示未选。 */
+  choice?: string;
 }
 
 export interface SessionSheet {
@@ -52,6 +77,9 @@ export interface SessionSheet {
   name: string;
   columns: Column[];
   people: SessionPerson[];
+  kind?: SheetKind;
+  countMode?: CountMode;
+  options?: SheetOption[];
 }
 
 export interface Session {

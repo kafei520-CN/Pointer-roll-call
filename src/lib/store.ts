@@ -1,5 +1,14 @@
 import {useSyncExternalStore} from 'react';
-import type {Person, Session, SessionPerson, Status, Template, TemplateSheet} from '../types';
+import type {
+  Person,
+  Session,
+  SessionPerson,
+  SheetKind,
+  Status,
+  Template,
+  TemplateSheet,
+} from '../types';
+import {addTally, appendMark, countMode, dropLastMark} from './sheet-record';
 import {
   initDb,
   loadAll,
@@ -70,7 +79,7 @@ function sortSessions(list: Session[]): Session[] {
   return [...list].sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
-export function emptySheet(name = '名单'): TemplateSheet {
+export function emptySheet(name = '名单', kind: SheetKind = 'roll'): TemplateSheet {
   return {
     id: createId(),
     name,
@@ -78,6 +87,9 @@ export function emptySheet(name = '名单'): TemplateSheet {
     nameColumnLabel: '姓名',
     columns: [],
     people: [],
+    kind,
+    countMode: kind === 'count' ? 'tally' : undefined,
+    options: kind === 'custom' ? [] : undefined,
   };
 }
 
@@ -136,6 +148,9 @@ export function clonePerson(person: Person): SessionPerson {
     search: person.search,
     status: 'unset',
     note: '',
+    marks: [],
+    count: 0,
+    choice: '',
   };
 }
 
@@ -155,6 +170,9 @@ export async function createSession(templateId: string, name: string): Promise<S
     sheets: template.sheets.map((sheet) => ({
       id: createId(),
       name: sheet.name,
+      kind: sheet.kind ?? 'roll',
+      countMode: sheet.countMode ?? 'tally',
+      options: (sheet.options ?? []).map((option) => ({...option})),
       columns: sheet.columns.map((col) => ({...col})),
       people: sheet.people.map(clonePerson),
     })),
@@ -171,6 +189,72 @@ export async function upsertSession(session: Session): Promise<void> {
   setState({sessions: sortSessions([next, ...others])});
 }
 
+async function writeSession(next: Session): Promise<void> {
+  await saveSession(next);
+  const others = state.sessions.filter((item) => item.id !== next.id);
+  setState({sessions: sortSessions([next, ...others])});
+}
+
+function withPerson(
+  session: Session,
+  sheetId: string,
+  personId: string,
+  edit: (person: SessionPerson, sheet: Session['sheets'][number]) => SessionPerson,
+): Session {
+  return {
+    ...session,
+    updatedAt: Date.now(),
+    sheets: session.sheets.map((sheet) => {
+      if (sheet.id !== sheetId) {
+        return sheet;
+      }
+      return {
+        ...sheet,
+        people: sheet.people.map((person) =>
+          person.id === personId ? edit(person, sheet) : person,
+        ),
+      };
+    }),
+  };
+}
+
+export async function bumpCount(
+  sessionId: string,
+  sheetId: string,
+  personId: string,
+  delta: 1 | -1,
+): Promise<void> {
+  const session = state.sessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return;
+  }
+  const next = withPerson(session, sheetId, personId, (person, sheet) => {
+    if (countMode(sheet) === 'sequence') {
+      return delta < 0 ? dropLastMark(person) : appendMark(person, sheet.people);
+    }
+    return addTally(person, delta);
+  });
+  await writeSession(next);
+}
+
+export async function chooseOption(
+  sessionId: string,
+  sheetId: string,
+  personId: string,
+  choice: string,
+): Promise<void> {
+  const session = state.sessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return;
+  }
+  const next = withPerson(session, sheetId, personId, (person) => ({
+    ...person,
+    choice,
+    markedAt: Date.now(),
+  }));
+  await writeSession(next);
+}
+
 export async function markPerson(
   sessionId: string,
   sheetId: string,
@@ -181,27 +265,12 @@ export async function markPerson(
   if (!session) {
     return;
   }
-  const next: Session = {
-    ...session,
-    updatedAt: Date.now(),
-    closedAt: session.closedAt,
-    sheets: session.sheets.map((sheet) => {
-      if (sheet.id !== sheetId) {
-        return sheet;
-      }
-      return {
-        ...sheet,
-        people: sheet.people.map((person) =>
-          person.id === personId
-            ? {...person, status, markedAt: Date.now()}
-            : person,
-        ),
-      };
-    }),
-  };
-  await saveSession(next);
-  const others = state.sessions.filter((item) => item.id !== next.id);
-  setState({sessions: sortSessions([next, ...others])});
+  const next = withPerson(session, sheetId, personId, (person) => ({
+    ...person,
+    status,
+    markedAt: Date.now(),
+  }));
+  await writeSession(next);
 }
 
 export async function closeSession(id: string): Promise<void> {
@@ -218,9 +287,7 @@ export async function reopenSession(id: string): Promise<void> {
     return;
   }
   const next = {...session, closedAt: undefined, updatedAt: Date.now()};
-  await saveSession(next);
-  const others = state.sessions.filter((item) => item.id !== next.id);
-  setState({sessions: sortSessions([next, ...others])});
+  await writeSession(next);
 }
 
 export async function deleteSession(id: string): Promise<void> {

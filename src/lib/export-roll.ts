@@ -1,5 +1,14 @@
 import * as XLSX from 'xlsx';
 import type {Session, SessionPerson, SessionSheet, Status} from '../types';
+import {
+  countMode,
+  formatSequence,
+  formatTally,
+  optionLabel,
+  personChoice,
+  personMarked,
+  sheetKind,
+} from './sheet-record';
 
 /** 未到 is every person still unmarked, on every sheet of this roll call. */
 export const EXPORT_GROUP_ORDER: Status[] = ['present', 'absent', 'leave', 'late', 'unset'];
@@ -32,6 +41,9 @@ export function exportCounts(session: Session): Record<Status, number> {
     late: 0,
   };
   for (const sheet of session.sheets) {
+    if (sheetKind(sheet) !== 'roll') {
+      continue;
+    }
     for (const person of sheet.people) {
       counts[person.status] += 1;
     }
@@ -51,7 +63,7 @@ export function exportTables(
   for (const sheet of session.sheets) {
     const people: Array<{person: SessionPerson; order: number}> = [];
     sheet.people.forEach((person, index) => {
-      if (selected.has(person.status)) {
+      if (keepPerson(sheet, person, selected, scope)) {
         people.push({person, order: index + 1});
       }
     });
@@ -61,12 +73,16 @@ export function exportTables(
     if (shape === 'brief') {
       tables.push({
         sheetName: sheet.name,
-        headers: ['序号', '名字', '状态'],
-        rows: people.map(({person, order}) => [order, person.name, EXPORT_LABEL[person.status]]),
+        headers: ['序号', '名字', recordHeader(sheet)],
+        rows: people.map(({person, order}) => [order, person.name, recordValue(sheet, person)]),
       });
       continue;
     }
     const cells = templateCells(sheet, nameLabels[sheet.id] || '姓名');
+    const record = recordCell(sheet);
+    if (record) {
+      cells.push(record);
+    }
     tables.push({
       sheetName: sheet.name,
       headers: cells.map((cell) => cell.label),
@@ -74,6 +90,55 @@ export function exportTables(
     });
   }
   return tables;
+}
+
+function keepPerson(
+  sheet: SessionSheet,
+  person: SessionPerson,
+  selected: Set<Status>,
+  scope: ExportScope,
+): boolean {
+  if (sheetKind(sheet) === 'roll') {
+    return selected.has(person.status);
+  }
+  if (scope === 'all') {
+    return true;
+  }
+  return personMarked(person, sheet);
+}
+
+function recordHeader(sheet: SessionSheet): string {
+  const kind = sheetKind(sheet);
+  if (kind === 'count') {
+    return countMode(sheet) === 'sequence' ? '数列' : '次数';
+  }
+  if (kind === 'custom') {
+    return '选项';
+  }
+  return '状态';
+}
+
+function recordValue(sheet: SessionSheet, person: SessionPerson): string {
+  const kind = sheetKind(sheet);
+  if (kind === 'count') {
+    return countMode(sheet) === 'sequence' ? formatSequence(person) : formatTally(person);
+  }
+  if (kind === 'custom') {
+    return optionLabel(sheet.options, personChoice(person));
+  }
+  return EXPORT_LABEL[person.status];
+}
+
+function recordCell(
+  sheet: SessionSheet,
+): {label: string; value: (person: SessionPerson) => string} | null {
+  if (sheetKind(sheet) === 'roll') {
+    return null;
+  }
+  return {
+    label: recordHeader(sheet),
+    value: (person) => recordValue(sheet, person),
+  };
 }
 
 function templateCells(

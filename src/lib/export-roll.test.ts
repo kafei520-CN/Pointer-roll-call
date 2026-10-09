@@ -101,4 +101,39 @@ describe('roll-call export', () => {
     expect(rows).toContainEqual(['002', '李四', '桥梁']);
     expect(rows.some((row) => row.includes('张三'))).toBe(false);
   });
+
+  it('exports a sequence, a tally, and a custom option', () => {
+    const session = sample();
+    session.sheets.push({
+      id: 'c',
+      name: '计数',
+      kind: 'count',
+      countMode: 'sequence',
+      columns: [],
+      people: [{...person('p5', '张三', 'unset', ''), marks: [1, 3, 5], count: 0}],
+    });
+    session.sheets.push({
+      id: 'd',
+      name: '次数',
+      kind: 'count',
+      countMode: 'tally',
+      columns: [],
+      people: [{...person('p6', '李四', 'unset', ''), count: 3}],
+    });
+    session.sheets.push({
+      id: 'e',
+      name: '评价',
+      kind: 'custom',
+      options: [{id: 'good', label: '优秀'}],
+      columns: [],
+      people: [{...person('p7', '王五', 'unset', ''), choice: 'good'}],
+    });
+    const markdown = toMarkdown(session, [], 'brief', {}, 'all');
+    expect(markdown).toContain('| 1 | 张三 | 1、3、5 |');
+    expect(markdown).toContain('| 1 | 李四 | 3 |');
+    expect(markdown).toContain('| 1 | 王五 | 优秀 |');
+    expect(markdown).toContain('数列');
+    expect(markdown).toContain('次数');
+    expect(markdown).toContain('选项');
+  });
 });
