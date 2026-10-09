@@ -10,8 +10,8 @@ import {
   parseWorkbook,
 } from '../lib/xlsx';
 import {go} from '../router';
-import type {RawWorkbook, SheetImportConfig} from '../types';
-import {Button, Shell, TextField, TopBar, cx} from '../ui';
+import type {CountMode, RawWorkbook, SheetImportConfig, SheetKind} from '../types';
+import {Button, Segmented, Shell, TextField, TopBar, cx} from '../ui';
 
 export function ImportWizard() {
   const [book, setBook] = useState<RawWorkbook | null>(null);
@@ -75,6 +75,20 @@ export function ImportWizard() {
     );
   }
 
+  function setImportKind(kind: SheetKind) {
+    setConfigs((current) =>
+      current.map((item) => ({
+        ...item,
+        kind,
+        countMode: item.countMode ?? 'tally',
+      })),
+    );
+  }
+
+  function setImportCountMode(countMode: CountMode) {
+    setConfigs((current) => current.map((item) => ({...item, countMode})));
+  }
+
   async function finish() {
     if (!book) {
       return;
@@ -127,6 +141,52 @@ export function ImportWizard() {
         {book && config && sheet ? (
           <div className="mt-5 space-y-4">
             <TextField label="模板名称" value={templateName} onChange={setTemplateName} />
+
+            <section>
+              <h2 className="mb-2 text-xs font-medium text-mute">模式</h2>
+              <div className="grid grid-cols-3 gap-1 rounded-2xl bg-soft p-1">
+                {(
+                  [
+                    ['roll', '点名'],
+                    ['count', '计数'],
+                    ['custom', '自定义'],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setImportKind(value)}
+                    className={cx(
+                      'h-10 rounded-xl text-sm font-medium',
+                      (config.kind ?? 'roll') === value ? 'bg-white text-ink shadow-sm' : 'text-mute',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {config.kind === 'count' ? (
+                <div className="mt-3">
+                  <Segmented
+                    value={config.countMode ?? 'tally'}
+                    onChange={setImportCountMode}
+                    options={[
+                      {value: 'sequence', label: '数列'},
+                      {value: 'tally', label: '次数'},
+                    ]}
+                  />
+                  <p className="mt-2 text-xs text-mute">
+                    数列记下 1、3、5 这样的序号。次数只记一共几次。这个选择会用到每个要导入的工作表。
+                  </p>
+                </div>
+              ) : null}
+              {config.kind === 'custom' ? (
+                <p className="mt-2 text-xs text-mute">人员从表格导入。选项在进入编辑后添加。</p>
+              ) : null}
+              {(config.kind ?? 'roll') === 'roll' ? (
+                <p className="mt-2 text-xs text-mute">导入后按到、缺、假、迟点名。这个选择会用到每个要导入的工作表。</p>
+              ) : null}
+            </section>
 
             <section>
               <h2 className="mb-2 text-xs font-medium text-mute">工作表</h2>

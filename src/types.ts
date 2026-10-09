@@ -110,4 +110,6 @@ export interface SheetImportConfig {
   startRow: number;
   endRow: number;
   nameCol: number;
+  kind?: SheetKind;
+  countMode?: CountMode;
 }

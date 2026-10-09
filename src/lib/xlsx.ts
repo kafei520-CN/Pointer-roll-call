@@ -101,6 +101,8 @@ export function defaultConfigs(workbook: RawWorkbook): SheetImportConfig[] {
   return workbook.sheets.map((sheet, index) => ({
     name: sheet.name,
     included: index === 0 || workbook.sheets.length <= 6,
+    kind: 'roll' as const,
+    countMode: 'tally' as const,
     ...detectConfig(sheet.rows),
   }));
 }
@@ -119,6 +121,7 @@ export function buildTemplateSheets(
       return;
     }
     const extracted = extractPeople(sheet.rows, item);
+    const kind = item.kind ?? 'roll';
     sheets.push({
       id: createId(),
       name: item.name,
@@ -126,6 +129,9 @@ export function buildTemplateSheets(
       nameColumnLabel: extracted.nameColumnLabel,
       columns: extracted.columns,
       people: extracted.people,
+      kind,
+      countMode: kind === 'count' ? (item.countMode ?? 'tally') : undefined,
+      options: kind === 'custom' ? [] : undefined,
     });
   });
   return sheets;

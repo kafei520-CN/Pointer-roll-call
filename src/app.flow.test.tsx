@@ -181,11 +181,19 @@ describe('local roll-call flow', () => {
   });
 
   it('creates a template when another app opens an xlsx', async () => {
+    const user = userEvent.setup();
     render(<App />);
     await screen.findByRole('heading', {name: '指针点名'});
     await openOpenedWorkbook(sampleFile());
 
+    expect(await screen.findByRole('heading', {name: '导入为模板'})).toBeTruthy();
+    expect(await screen.findByDisplayValue('班级')).toBeTruthy();
+    await user.click(screen.getByRole('button', {name: '计数'}));
+    await user.click(screen.getByRole('button', {name: '数列'}));
+    await user.click(screen.getByRole('button', {name: '进入编辑'}));
+
     expect(await screen.findByRole('heading', {name: '编辑模板'})).toBeTruthy();
+    expect(screen.getByText(/计数表/)).toBeTruthy();
     expect(screen.getByDisplayValue('班级')).toBeTruthy();
     expect(screen.getByDisplayValue('张三')).toBeTruthy();
     expect(screen.queryByDisplayValue('王五')).toBeNull();

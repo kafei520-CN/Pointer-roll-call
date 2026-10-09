@@ -1,6 +1,6 @@
 import {describe, expect, it} from 'vitest';
 import * as XLSX from 'xlsx';
-import {columnLetter, detectConfig, extractPeople, parseWorkbook} from './xlsx';
+import {buildTemplateSheets, columnLetter, defaultConfigs, detectConfig, extractPeople, parseWorkbook} from './xlsx';
 
 function workbookBuffer(): Uint8Array {
   const wb = XLSX.utils.book_new();
@@ -51,6 +51,19 @@ describe('xlsx import', () => {
     expect(extracted.people.map((p) => p.name)).toEqual(['张三', '李四', '王五']);
     expect(extracted.people.map((p) => p.rowNumber)).toEqual([3, 4, 6]);
     expect(extracted.people[0].fields.c1).toBe('001');
+  });
+
+  it('applies the chosen import mode to every sheet', () => {
+    const book = parseWorkbook(workbookBuffer(), '班级.xlsx');
+    const configs = defaultConfigs(book).map((config) => ({
+      ...config,
+      kind: 'count' as const,
+      countMode: 'sequence' as const,
+    }));
+    const sheets = buildTemplateSheets(book, configs);
+    expect(sheets.map((sheet) => sheet.kind)).toEqual(['count', 'count']);
+    expect(sheets[0].countMode).toBe('sequence');
+    expect(sheets[0].people[0].name).toBe('张三');
   });
 
   it('converts column index to Excel letters', () => {
