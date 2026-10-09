@@ -235,10 +235,12 @@ describe('local roll-call flow', () => {
     const zhang = screen.getByText('张三').closest('li') as HTMLElement;
     await user.click(within(zhang).getByRole('button', {name: '记一次'}));
     await user.click(within(zhang).getByRole('button', {name: '记一次'}));
-    expect(within(zhang).getByText('1、2')).toBeTruthy();
+    expect(within(zhang).getByRole('button', {name: '1'}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(zhang).getByRole('button', {name: '2'}).getAttribute('aria-pressed')).toBe('true');
     expect(within(zhang).getByText('2 次')).toBeTruthy();
-    await user.click(within(zhang).getByRole('button', {name: '撤销上一次'}));
-    expect(within(zhang).queryByText('1、2')).toBeNull();
+    await user.click(within(zhang).getByRole('button', {name: '2'}));
+    expect(within(zhang).getByRole('button', {name: '1'}).getAttribute('aria-pressed')).toBe('true');
+    expect(within(zhang).queryByRole('button', {name: '2'})).toBeNull();
     expect(within(zhang).getByText('1 次')).toBeTruthy();
 
     await user.click(screen.getByRole('button', {name: '自定义'}));

@@ -8,6 +8,8 @@ import {
   formatTally,
   nextChoice,
   personMarked,
+  sequenceNumbers,
+  toggleSheetMark,
 } from './sheet-record';
 
 function person(id: string, marks: number[] = [], count = 0): SessionPerson {
@@ -38,6 +40,16 @@ describe('count sheet records', () => {
     const undone = dropLastMark(again);
     expect(formatSequence(undone)).toBe('1');
     expect(formatSequence(appendMark(undone, [undone, later]))).toBe('1、5');
+  });
+
+  it('lets a person take or drop any existing sequence number', () => {
+    const people = [person('a', [1, 3]), person('b', [2])];
+    const dropped = toggleSheetMark(people, 'a', 3);
+    expect(dropped[0].marks).toEqual([1]);
+    expect(sequenceNumbers(dropped)).toEqual([1, 2]);
+    const taken = toggleSheetMark(people, 'b', 1);
+    expect(taken[0].marks).toEqual([3]);
+    expect(taken[1].marks).toEqual([2, 1].sort((left, right) => left - right));
   });
 
   it('stores a plain tally and does not go below zero', () => {

@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from 'react';
+import {useEffect, useMemo, useRef, useState} from 'react';
 import {IconSearch} from '../icons';
 import {
   EXPORT_GROUP_ORDER,
@@ -14,18 +14,27 @@ import {matchesQuery} from '../lib/search';
 import {
   countMode,
   countValue,
-  formatSequence,
   markedTotals,
   nextChoice,
   optionLabel,
   personChoice,
   personMarked,
+  personMarks,
   recordSummary,
+  sequenceNumbers,
   sheetKind,
   unmarkedWord,
 } from '../lib/sheet-record';
 import {sessionStats, sheetStats, STATUS_LABEL} from '../lib/status';
-import {bumpCount, chooseOption, closeSession, markPerson, reopenSession, useApp} from '../lib/store';
+import {
+  bumpCount,
+  chooseOption,
+  closeSession,
+  markPerson,
+  reopenSession,
+  toggleCountNumber,
+  useApp,
+} from '../lib/store';
 import {useHorizontalSwipe} from '../lib/swipe';
 import {go} from '../router';
 import type {Session, SessionPerson, SessionSheet, Status} from '../types';
@@ -185,7 +194,7 @@ export function SessionView({id}: {id: string}) {
         {sheetKind(sheet) === 'count' ? (
           <p className="text-xs text-mute">
             {countMode(sheet) === 'sequence'
-              ? '点一下记入下一个序号。1、3、5 表示这三次，个数就是次数。'
+              ? '点加号增加一个序号。点数字可以选上或取消，多了就左右滑动。'
               : '点一下加 1 次。数字就是次数。'}
           </p>
         ) : null}
@@ -205,6 +214,9 @@ export function SessionView({id}: {id: string}) {
                   void markPerson(session.id, sheet.id, person.id, status)
                 }
                 onCount={(delta) => void bumpCount(session.id, sheet.id, person.id, delta)}
+                onToggleMark={(mark) =>
+                  void toggleCountNumber(session.id, sheet.id, person.id, mark)
+                }
                 onChoice={(choice) => void chooseOption(session.id, sheet.id, person.id, choice)}
               />
             ))}
@@ -330,6 +342,7 @@ function PersonCard({
   sheet,
   onStatus,
   onCount,
+  onToggleMark,
   onChoice,
 }: {
   person: SessionPerson;
@@ -337,6 +350,7 @@ function PersonCard({
   sheet: SessionSheet;
   onStatus: (status: Status) => void;
   onCount: (delta: 1 | -1) => void;
+  onToggleMark: (mark: number) => void;
   onChoice: (choice: string) => void;
 }) {
   const extra = sheet.columns
@@ -344,31 +358,36 @@ function PersonCard({
     .filter(Boolean)
     .join(' · ');
   const kind = sheetKind(sheet);
+  const sequence = kind === 'count' && countMode(sheet) === 'sequence';
   return (
     <li className="rounded-3xl border border-line bg-white p-3">
       <div className="flex items-start gap-3">
         <span className="w-8 pt-1 text-xs text-mute">{order}</span>
-        <button
-          type="button"
-          className="min-w-0 flex-1 text-left"
-          onClick={() => {
-            if (kind === 'count') {
-              onCount(1);
-              return;
-            }
-            if (kind === 'custom') {
-              onChoice(nextChoice(personChoice(person), sheet.options ?? []));
-              return;
-            }
-            onStatus(cycle(person.status));
-          }}
-        >
-          <p className="truncate font-medium">{person.name}</p>
-          {extra ? <p className="mt-0.5 truncate text-xs text-mute">{extra}</p> : null}
-          {kind === 'count' && countMode(sheet) === 'sequence' ? (
-            <p className="mt-0.5 text-sm break-all">{formatSequence(person) || '未计'}</p>
-          ) : null}
-        </button>
+        {sequence ? (
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">{person.name}</p>
+            {extra ? <p className="mt-0.5 truncate text-xs text-mute">{extra}</p> : null}
+          </div>
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 flex-1 text-left"
+            onClick={() => {
+              if (kind === 'count') {
+                onCount(1);
+                return;
+              }
+              if (kind === 'custom') {
+                onChoice(nextChoice(personChoice(person), sheet.options ?? []));
+                return;
+              }
+              onStatus(cycle(person.status));
+            }}
+          >
+            <p className="truncate font-medium">{person.name}</p>
+            {extra ? <p className="mt-0.5 truncate text-xs text-mute">{extra}</p> : null}
+          </button>
+        )}
         <RecordBadge person={person} sheet={sheet} />
       </div>
       {kind === 'roll' ? (
@@ -388,7 +407,15 @@ function PersonCard({
           ))}
         </div>
       ) : null}
-      {kind === 'count' ? (
+      {sequence ? (
+        <SequenceRow
+          numbers={sequenceNumbers(sheet.people)}
+          selected={personMarks(person)}
+          onToggle={onToggleMark}
+          onAdd={() => onCount(1)}
+        />
+      ) : null}
+      {kind === 'count' && !sequence ? (
         <div className="mt-3 grid grid-cols-2 gap-1">
           <button
             type="button"
@@ -430,6 +457,61 @@ function PersonCard({
         )
       ) : null}
     </li>
+  );
+}
+
+function SequenceRow({
+  numbers,
+  selected,
+  onToggle,
+  onAdd,
+}: {
+  numbers: number[];
+  selected: number[];
+  onToggle: (mark: number) => void;
+  onAdd: () => void;
+}) {
+  const scroller = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const node = scroller.current;
+    if (node) {
+      node.scrollLeft = node.scrollWidth;
+    }
+  }, [numbers.length]);
+  const chosen = new Set(selected);
+  return (
+    <div className="mt-3 flex items-center gap-1">
+      <div
+        ref={scroller}
+        className="flex w-[10.75rem] gap-1 overflow-x-auto"
+      >
+        {numbers.map((mark) => {
+          const on = chosen.has(mark);
+          return (
+            <button
+              key={mark}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onToggle(mark)}
+              className={cx(
+                'h-10 w-10 shrink-0 rounded-2xl text-sm',
+                on ? 'bg-ink text-white' : 'bg-soft text-ink',
+              )}
+            >
+              {mark}
+            </button>
+          );
+        })}
+      </div>
+      <button
+        type="button"
+        aria-label="记一次"
+        onClick={onAdd}
+        className="h-10 w-10 shrink-0 rounded-2xl bg-ink text-sm text-white"
+      >
+        +
+      </button>
+    </div>
   );
 }
 

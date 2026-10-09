@@ -8,7 +8,7 @@ import type {
   Template,
   TemplateSheet,
 } from '../types';
-import {addTally, appendMark, countMode, dropLastMark} from './sheet-record';
+import {addTally, appendMark, countMode, dropLastMark, toggleSheetMark} from './sheet-record';
 import {
   initDb,
   loadAll,
@@ -234,6 +234,28 @@ export async function bumpCount(
     }
     return addTally(person, delta);
   });
+  await writeSession(next);
+}
+
+export async function toggleCountNumber(
+  sessionId: string,
+  sheetId: string,
+  personId: string,
+  mark: number,
+): Promise<void> {
+  const session = state.sessions.find((item) => item.id === sessionId);
+  if (!session) {
+    return;
+  }
+  const next: Session = {
+    ...session,
+    updatedAt: Date.now(),
+    sheets: session.sheets.map((sheet) =>
+      sheet.id === sheetId
+        ? {...sheet, people: toggleSheetMark(sheet.people, personId, mark)}
+        : sheet,
+    ),
+  };
   await writeSession(next);
 }
 

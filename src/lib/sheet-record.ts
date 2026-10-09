@@ -71,6 +71,44 @@ export function dropLastMark(person: SessionPerson): SessionPerson {
   return {...person, marks: marks.slice(0, -1)};
 }
 
+export function sequenceNumbers(people: SessionPerson[]): number[] {
+  const highest = nextSequence(people) - 1;
+  if (highest <= 0) {
+    return [];
+  }
+  return Array.from({length: highest}, (_, index) => index + 1);
+}
+
+export function toggleSheetMark(
+  people: SessionPerson[],
+  personId: string,
+  mark: number,
+): SessionPerson[] {
+  const mine = people.find((person) => person.id === personId);
+  if (!mine) {
+    return people;
+  }
+  const has = personMarks(mine).includes(mark);
+  return people.map((person) => {
+    if (has) {
+      return person.id === personId
+        ? {...person, marks: personMarks(person).filter((item) => item !== mark)}
+        : person;
+    }
+    if (person.id === personId) {
+      return {
+        ...person,
+        marks: [...personMarks(person), mark].sort((left, right) => left - right),
+        markedAt: Date.now(),
+      };
+    }
+    if (!personMarks(person).includes(mark)) {
+      return person;
+    }
+    return {...person, marks: personMarks(person).filter((item) => item !== mark)};
+  });
+}
+
 export function addTally(person: SessionPerson, delta: number): SessionPerson {
   return {
     ...person,
