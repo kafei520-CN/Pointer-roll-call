@@ -401,7 +401,7 @@ function PersonCard({
             <button
               key={status}
               type="button"
-              onClick={() => onStatus(status)}
+              onClick={() => onStatus(person.status === status ? 'unset' : status)}
               className={cx(
                 'h-10 rounded-2xl text-sm',
                 person.status === status ? 'bg-ink text-white' : 'bg-soft text-ink',
